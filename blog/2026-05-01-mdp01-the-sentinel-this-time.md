@@ -7,6 +7,7 @@ entry_type: note
 subtype: diary
 projects: [casehub-ledger]
 tags: [trust, schema, quarkus, code-review, group-b]
+excerpt: "For capabilityTag, the sentinel \"*\" is the right answer where NULL was right for scope_key — query patterns use the same operator as any scoped query, and every major policy system already uses \"*\" for global scope."
 ---
 
 Before Group B could start properly, we split `DESIGN.md`. At 503 lines it wasn't unmanageable, but the capability trust work — multi-dimensional scoring, the new query surface, all the things coming in the next few issues — was going to push it past readable. The organizing principle was obvious once named: stable structure stays in `DESIGN.md`, growing algorithms move to `DESIGN-capabilities.md`. It took an afternoon and everything cross-references correctly.

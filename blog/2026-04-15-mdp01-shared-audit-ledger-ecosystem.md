@@ -7,6 +7,7 @@ entry_type: note
 subtype: diary
 projects: [casehub-ledger]
 tags: [quarkus, jpa, flyway, audit]
+excerpt: "Qhorus needing Tarkus's audit patterns prompts extraction into a shared library — LedgerEntry uses JPA JOINED inheritance so each domain adds its own subclass table without touching the base schema."
 ---
 
 The conversation that led to casehub-ledger started with a different question: could Qhorus borrow some of Tarkus's audit patterns? Tarkus already had hash chains, decision context snapshots, and peer attestations built. Qhorus needed something similar for EU AI Act compliance.

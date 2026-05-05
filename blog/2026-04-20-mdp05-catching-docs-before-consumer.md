@@ -7,6 +7,7 @@ entry_type: note
 subtype: diary
 projects: [casehub-ledger]
 tags: [quarkus, documentation, api-drift]
+excerpt: "The Merkle sprint deleted LedgerHashChain without updating the integration guide, leaving consumers with compile-error-inducing sample code that pointed nowhere — a systematic cleanup removes every stale reference."
 ---
 
 The Merkle sprint deleted `LedgerHashChain`. That was the right call — the class was replaced by `LedgerMerkleTree` and the write path was folded into `JpaLedgerEntryRepository.save()`. Consumers no longer touch hash computation at all.

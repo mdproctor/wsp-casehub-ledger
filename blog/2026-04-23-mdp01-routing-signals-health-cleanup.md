@@ -7,6 +7,7 @@ entry_type: note
 subtype: diary
 projects: [casehub-ledger]
 tags: [cdi, quarkus, health-check, trust-scoring]
+excerpt: "Using distinct CDI event record types — full payload, delta, computed-at timestamp — as a strategy selector lets consumers receive only the trust score signals they need without a configuration enum."
 ---
 
 I wanted to ship the trust score routing signals and run a health check before

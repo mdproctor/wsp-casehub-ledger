@@ -7,6 +7,7 @@ entry_type: note
 subtype: diary
 projects: [casehub-ledger]
 tags: [quarkus, merkle, cryptography, verifiability, architecture]
+excerpt: "The Merkle Mountain Range structure from RFC 9162 provides O(log N) frontier storage and tamper-evident inclusion proofs signed with Ed25519, making verification genuinely independent of the operator."
 ---
 
 The last entry ended with issue #11 on deck. The research matrix rated it ★★ — "right move eventually, not urgent." I wasn't sure I agreed. External verifiability is what separates a tamper-evident log from a genuine audit trail. Without it, a regulator checking an AI system's audit record has to trust the operator's own report. That's not verification.

@@ -7,6 +7,7 @@ entry_type: note
 subtype: diary
 projects: [casehub-ledger]
 tags: [trust, bayesian, spi, quarkus, code-review]
+excerpt: "Three peer-reviewed papers reach three incompatible conclusions on global trust aggregation — the right answer is a pluggable GlobalScoreStrategy SPI rather than picking one framework's position."
 ---
 
 Before starting #61 I wanted to know what the literature says about global trust score aggregation. The question seemed simple: when an agent has both global and capability-specific attestations, does the global score use all of them or only the ones tagged as explicitly cross-capability? I was about to just pick one and move on.

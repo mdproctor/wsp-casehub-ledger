@@ -7,6 +7,7 @@ entry_type: note
 subtype: diary
 projects: [casehub-ledger]
 tags: [cdi, quarkus, org-structure]
+excerpt: "A plausible commit hardcodes @PersistenceUnit(\"qhorus\") into a generic extension library — caught in git log review before it shipped, with the correct fix being a DefaultBean producer pattern in the embedding application."
 ---
 
 Claude added `@PersistenceUnit("qhorus")` to six runtime beans in casehub-ledger

@@ -7,6 +7,7 @@ entry_type: note
 subtype: diary
 projects: [casehub-ledger]
 tags: [quarkus, documentation, capabilities, privacy, gdpr]
+excerpt: "Rating each capability for enterprise applicability forces an honest assessment — EigenTrust transitivity earns two stars in 2026 not because it is wrong but because enterprise AI agent meshes haven't arrived yet."
 ---
 
 The session started with a question I hadn't fully sat with: which of these

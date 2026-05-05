@@ -7,6 +7,7 @@ entry_type: note
 subtype: diary
 projects: [casehub-ledger]
 tags: [quarkus, prov-dm, w3c, provenance, interoperability]
+excerpt: "LedgerEntry exports as W3C PROV-JSON-LD per subject, deduplicating agents across entries and emitting both sequential and cross-subject wasDerivedFrom edges so regulators get a complete provenance graph in one call."
 ---
 
 The W3C PROV-DM mapping was obvious before we wrote a line of code. `LedgerEntry` maps to `prov:Entity` — it's the thing with a provenance story. `actorId` maps to `prov:Agent`. Each entry's action maps to `prov:Activity`. The canonical relations follow: `wasGeneratedBy`, `wasAssociatedWith`, `wasDerivedFrom` for the sequential chain. This is the kind of mapping that validates itself.

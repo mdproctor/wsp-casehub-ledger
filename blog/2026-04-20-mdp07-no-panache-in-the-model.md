@@ -7,6 +7,7 @@ entry_type: note
 subtype: diary
 projects: [casehub-ledger]
 tags: [quarkus, jpa, panache, architecture, entities]
+excerpt: "Stripping Panache from all extension entities removes a framework dependency consumers didn't choose, and @NamedQuery replaces the static Panache shorthand with startup-validated queries that fail at boot rather than at runtime."
 ---
 
 Earlier in this session we converted `LedgerEntry` to a plain `@Entity` to unblock Qhorus's reactive migration. That was the forcing function. But once we'd done one entity, the question became: why stop there?

@@ -7,6 +7,7 @@ entry_type: note
 subtype: diary
 projects: [casehub-ledger]
 tags: [quarkus, jpa, panache, reactive, documentation]
+excerpt: "Converting LedgerEntry from PanacheEntityBase to a plain @Entity removes the Panache dependency that was blocking Qhorus's reactive migration and unblocks any future consumer choosing a different persistence model."
 ---
 
 The integration guide still showed consumers calling `LedgerHashChain.compute(previousHash, entry)`.

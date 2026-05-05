@@ -7,6 +7,7 @@ entry_type: note
 subtype: diary
 projects: [casehub-ledger]
 tags: [trust, agentic, code-review, quarkus]
+excerpt: "Five deferred issues ship in one push, but the session's main discovery is that a sentinel empty-string for global scope was unnecessary — the previous session already solved the uniqueness constraint cleanly with NULLS NOT DISTINCT."
 ---
 
 We shipped a lot today. The prerequisites I'd been deferring are done — the

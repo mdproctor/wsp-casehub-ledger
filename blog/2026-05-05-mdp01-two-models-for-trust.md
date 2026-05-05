@@ -7,6 +7,7 @@ entry_type: note
 subtype: diary
 projects: [casehub-ledger]
 tags: [trust, bayesian, quarkus, code-review]
+excerpt: "Dimension scores are continuous magnitudes, not binary verdicts, so they need a decay-weighted average rather than a Beta accumulator — passing AttestationVerdict.SOUND forces pure time decay and drops the asymmetric polarity logic."
 ---
 
 The capability scores added in the previous phase use the Bayesian Beta model. A binary verdict — SOUND or FLAGGED — increments α or β, decayed by age and scaled by confidence.
