@@ -1,39 +1,50 @@
 # CaseHub Ledger — Session Handover
-**Date:** 2026-05-05
+**Date:** 2026-05-13
 
 ## Current State
 
-`casehub-ledger` v0.2-SNAPSHOT. Clean working tree. 345 tests, BUILD SUCCESS.
-Group A (#49) fully closed: #57 ✅ #59 ✅ #56 ✅ #58 ✅. Group B was already done.
+`casehub-ledger` v0.2-SNAPSHOT. Clean working tree (ignore untracked squash plans and `wksp` symlink). 366 tests, BUILD SUCCESS. Groups C (#63) and D (#65) shipped and pushed.
 
 ## What Landed This Session
 
-**Group A — four independent features:**
-- `AttestationAggregator` — consensus verdict before trust scoring; WEIGHTED_MAJORITY/
-  UNANIMOUS_REQUIRED/FIRST_ATTESTOR; `casehub.ledger.trust-score.aggregation-strategy`
-- `@ProvenanceCapture` interceptor — auto-attaches `ProvenanceSupplement` via existing
-  enricher pipeline; `@SourceEntityId` param annotation; ThreadLocal stack context
-  (not `@RequestScoped` — works in schedulers and `@QuarkusTest` without HTTP)
-- `LedgerHealthJob` — scheduled gap detection (JPQL GROUP BY/HAVING) + reconciliation
-  SPI; `LedgerGapDetected` CDI event; `casehub.ledger.health.*` config
-- `LedgerComplianceReportService` — `reportForActor`/`reportForSubject`; `ComplianceReport`
-  with `format(PLAIN_JSON/CSV/JSON_LD)`; `findBySubjectIdAndTimeRange` added to both
-  repository SPIs
+**Groups C and D — trust federation and bootstrap:**
+- `TrustExportService` — CDI read-model: `exportAll(minScore)` / `exportActor(actorId)` / `exportDelta(since)` → structured `TrustExportPayload` (GLOBAL / CAPABILITY / DIMENSION per actor)
+- `TrustImportService` SPI — `importTrust(payload)`; `NoOpTrustImportService` @DefaultBean; `JpaTrustImportService` @Alternative (seed-if-absent)
+- `TrustBootstrapSource` SPI — `fetchPriorTrust(actorId)`; `NoOpTrustBootstrapSource` @DefaultBean
+- `TrustBootstrapService` — calls source per actor, delegates to import; wired into `TrustScoreJob` as batch pre-pass (gated by `casehub.ledger.trust-score.bootstrap.enabled=false`)
+- All in `runtime/service/federation/` package
 
-**Documentation audit:** 6 files — CLAUDE.md structure table fully corrected (new files,
-wrong locations fixed), docs-wide config prefix `quarkus.ledger` → `casehub.ledger`,
-EigenTrust key names fixed, integration-guide.md got 3 new consumer sections.
+**Config additions:** `LedgerConfig.TrustScoreConfig.ExportConfig` (`deploymentId: Optional<String>`) and `BootstrapConfig` (`enabled: boolean`)
+
+**Repo method added:** `ActorTrustScoreRepository.findAllByLastComputedAtAfter(Instant)`
+
+**Doc/routing fix:** Specs and ADRs now route to project repo (`docs/specs/`, `docs/adr/`) at epic close. CLAUDE.md routing updated. Session spec promoted.
+
+**#75 closed:** ActorTypeResolver A2A mappings (pre-existing commit, issue wasn't linked).
+
+## Key Decisions
+
+- `HttpTrustBootstrapSource` and REST export endpoint cut — no concrete multi-deployment topology yet; SPI exists for when needed
+- `TrustImportService` implementation IS the strategy (no `MergeStrategy` enum)
+- `@WithDefault("") String` causes SmallRye Config boot failure → `Optional<String>` (garden GE-20260513-a2f5b7)
+- `@Alternative` inner classes in `@QuarkusTest` require explicit `selected-alternatives` — not auto-discovered (garden GE-20260512-c246b0 corrected)
+
+## Open Issues
+
+- #76 — `CAPABILITY_DIMENSION` composite trust score (next candidate)
+- #72 — cross-repo quality issues from sweep (still open)
+- #65, #64, #63 — closed ✅
+- Epics #51, #52 — closed ✅
 
 ## Immediate Next Steps
 
-1. **Group C / D** — check remaining open issues in epic #48 subtree:
-   `gh issue list --repo casehubio/ledger`
-2. **Milestone** — Group A+B done; consider `gh release create --generate-notes`
+Check remaining open work: `gh issue list --repo casehubio/ledger`
+Most likely next: `#76` — CAPABILITY_DIMENSION composite trust score
 
 ## References
 
 | What | Path |
-|---|---|
-| Latest blog | `blog/2026-05-05-mdp02-the-proxy-and-the-bean.md` |
-| Latest ADRs | `adr/0006` – `adr/0008` |
+|------|------|
+| Latest blog | `blog/2026-05-13-mdp01-trust-without-ceremony.md` |
+| Latest spec (project) | `docs/specs/2026-05-12-trust-federation-bootstrap-design.md` |
 | Previous handover | `git show HEAD~1:HANDOFF.md` |
