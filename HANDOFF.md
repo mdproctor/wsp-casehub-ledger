@@ -1,50 +1,45 @@
 # CaseHub Ledger — Session Handover
-**Date:** 2026-05-13
+**Date:** 2026-05-14
 
 ## Current State
 
-`casehub-ledger` v0.2-SNAPSHOT. Clean working tree (ignore untracked squash plans and `wksp` symlink). 366 tests, BUILD SUCCESS. Groups C (#63) and D (#65) shipped and pushed.
+`casehub-ledger` v0.2-SNAPSHOT. Clean working tree. 390 tests, BUILD SUCCESS. Issue #76 closed and merged to main.
 
 ## What Landed This Session
 
-**Groups C and D — trust federation and bootstrap:**
-- `TrustExportService` — CDI read-model: `exportAll(minScore)` / `exportActor(actorId)` / `exportDelta(since)` → structured `TrustExportPayload` (GLOBAL / CAPABILITY / DIMENSION per actor)
-- `TrustImportService` SPI — `importTrust(payload)`; `NoOpTrustImportService` @DefaultBean; `JpaTrustImportService` @Alternative (seed-if-absent)
-- `TrustBootstrapSource` SPI — `fetchPriorTrust(actorId)`; `NoOpTrustBootstrapSource` @DefaultBean
-- `TrustBootstrapService` — calls source per actor, delegates to import; wired into `TrustScoreJob` as batch pre-pass (gated by `casehub.ledger.trust-score.bootstrap.enabled=false`)
-- All in `runtime/service/federation/` package
+**#76 — CAPABILITY_DIMENSION composite trust score:**
 
-**Config additions:** `LedgerConfig.TrustScoreConfig.ExportConfig` (`deploymentId: Optional<String>`) and `BootstrapConfig` (`enabled: boolean`)
-
-**Repo method added:** `ActorTrustScoreRepository.findAllByLastComputedAtAfter(Instant)`
-
-**Doc/routing fix:** Specs and ADRs now route to project repo (`docs/specs/`, `docs/adr/`) at epic close. CLAUDE.md routing updated. Session spec promoted.
-
-**#75 closed:** ActorTypeResolver A2A mappings (pre-existing commit, issue wasn't linked).
+- **Schema:** V1001 rewritten in place — `scope_key` replaced with `capability_key` + `dimension_key` (nullable). Unique constraint `NULLS NOT DISTINCT (actor_id, capability_key, dimension_key)`. CHECK constraint enforces score_type/key nullity state machine. No V1005 (project convention: no incremental migrations).
+- **API module:** `ScoreType` gains `CAPABILITY_DIMENSION`. `ActorTrustScore @MappedSuperclass` replaces `scopeKey` field with `capabilityKey` + `dimensionKey`.
+- **Repository SPI:** `findByActorIdAndTypeAndKey` removed. Typed replacements: `findCapabilityScore`, `findDimensionScore`, `findCapabilityDimension`, `findCapabilityDimensions`. Upsert signature updated to two-key params.
+- **`TrustScoreJob`:** Fourth pass (capability-dimension) between dimension and global. Groups raw `actorAttestations` by `(capabilityTag, trustDimension)`, calls `computeDimensionScore`.
+- **`TrustGateService`:** `qualityScore`, `qualityScores`, `meetsQualityThreshold`.
+- **Federation:** `CapabilityDimensionScoreExport` record, `ActorExport` gains fourth field, `TrustExportService` + `JpaTrustImportService` updated.
+- **ADRs:** 0009 (decay-weighted average for continuous scores), 0010 (two-column key model, supersedes 0006).
+- **Downstream check:** grepped all repos for `.scopeKey` — no references. Safe to publish snapshot.
 
 ## Key Decisions
 
-- `HttpTrustBootstrapSource` and REST export endpoint cut — no concrete multi-deployment topology yet; SPI exists for when needed
-- `TrustImportService` implementation IS the strategy (no `MergeStrategy` enum)
-- `@WithDefault("") String` causes SmallRye Config boot failure → `Optional<String>` (garden GE-20260513-a2f5b7)
-- `@Alternative` inner classes in `@QuarkusTest` require explicit `selected-alternatives` — not auto-discovered (garden GE-20260512-c246b0 corrected)
+- Two explicit columns beat composite string encoding (`"cap:dim"`) — see ADR 0010
+- `score_type` column retained despite being deterministic from keys — enables indexed queries without multi-column IS NULL expressions
+- CHECK constraint enforces state machine at DB level — no application-level enforcement needed
+- Continuous scores (DIMENSION, CAPABILITY_DIMENSION) use decay-weighted average; binary scores (GLOBAL, CAPABILITY) use Bayesian Beta — see ADR 0009
 
 ## Open Issues
 
-- #76 — `CAPABILITY_DIMENSION` composite trust score (next candidate)
 - #72 — cross-repo quality issues from sweep (still open)
-- #65, #64, #63 — closed ✅
-- Epics #51, #52 — closed ✅
+- #50, #49, #48 — epics (still open)
 
 ## Immediate Next Steps
 
 Check remaining open work: `gh issue list --repo casehubio/ledger`
-Most likely next: `#76` — CAPABILITY_DIMENSION composite trust score
+No clear next issue identified — #72 (quality sweep) is the next candidate.
 
 ## References
 
 | What | Path |
 |------|------|
-| Latest blog | `blog/2026-05-13-mdp01-trust-without-ceremony.md` |
-| Latest spec (project) | `docs/specs/2026-05-12-trust-federation-bootstrap-design.md` |
+| Latest blog | `blog/2026-05-14-mdp01-quality-at-the-intersection.md` |
+| Latest spec (project) | `docs/specs/2026-05-14-capability-dimension-trust-score-design.md` |
+| Latest ADRs | `docs/adr/0009-continuous-scores-decay-weighted-average.md`, `docs/adr/0010-two-column-key-model-replaces-scope-key.md` |
 | Previous handover | `git show HEAD~1:HANDOFF.md` |
