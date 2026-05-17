@@ -1,52 +1,52 @@
 # CaseHub Ledger — Session Handover
-**Date:** 2026-05-15
+**Date:** 2026-05-17
 
 ## Current State
 
-*Unchanged — `git show HEAD~1:HANDOFF.md`* (390 tests, BUILD SUCCESS, clean .m2 install done this session)
+432 tests, BUILD SUCCESS. Both repos on `main`. No active epic. All open bugs resolved.
 
-## What Happened This Session
+## What Landed This Session
 
-**Housekeeping:** Closed stale issues #76, #78, #49, #50, #48 — all work was already done, issues just weren't closed. Ledger is now feature-complete for v0.2 scope with exactly one open issue (#72).
+**#79** (bilateral entry signing) and **#80** (key rotation) — both shipped and pushed to main.
 
-**#72 (cross-repo audit):** casehub-work half confirmed fixed (April 29 session). Claudony half still pending — prompt drafted, waiting for claudony to be free.
+Key rotation highlights:
+- `SigningKey` record: self-derived `keyRef = Base64URL(SHA-256(pubKey))` — zero operator config, Sigstore-aligned
+- `KeyRotationReason`: SCHEDULED | COMPROMISED (NIST SP 800-57 distinction)
+- `KeyRotationEntry`: first-class `LedgerEntry` subclass; subjectId derived from actorId
+- `VerificationResult.SUSPECT`: valid signature, compromised key — distinct from INVALID
+- ADRs 0011 (per-actorId key model) and 0012 (key rotation design)
 
-**Research:** Web search on ledger/trust field. Five roadmap ideas added to IDEAS.md: bilateral entry signing, agent DID/VC identity, ZK compliance proofs, AntTrust alternative, delegation chain tracking.
+**#83** (AgentSignatureSuspectEvent) — shipped and epic closed.
+- `AgentSignatureSuspectEvent` CDI record; consumers choose @Observes or @ObservesAsync
+- `verifyAgentSignature()` fires `event.fire()` on SUSPECT
+- New `verifyAgentSignatureAsync(UUID)` — reactive twin, `Uni<VerificationResult>`, fires `event.fireAsync()`
+- Blocking bridge for `compromisedWindows()` pending #86 (reactive KeyRotationService)
 
-**New issue #79 created:** `feat: bilateral entry signing — agent non-repudiation via Ed25519 agent signature`
+**Epic skill improved:** empty journal at close now surfaces `[W]rite / [S]kip` instead of silently skipping.
 
-**Design in progress (brainstorming, mid-session):**
-- Key model: **per-actorId** (Option B) — `AgentKeyProvider` SPI with `ConfiguredAgentKeyProvider` default reading from `casehub.ledger.agent.signing.keys.<actorId>`
-- Storage: **two nullable columns on `ledger_entry`** — `agent_signature BYTEA`, `agent_public_key BYTEA` (V1005 migration)
-- Approach confirmed, design doc not yet written
-
-**ADR 0011** to be written alongside implementation: per-actorId signing key model.
-
-## Key Implementation Constraint
-
-`canonicalBytes()` in `LedgerMerkleTree` is **private**. The `AgentSignatureEnricher` cannot call it directly. Options:
-- Expose as `public static canonicalBytes(LedgerEntry)` — preferred
-- Duplicate the `subjectId|seqNum|entryType|actorId|actorRole|occurredAt` construction
-
-Decision deferred to design doc / implementation.
-
-## Immediate Next Step
-
-Resume brainstorming: present the full design (components, data flow, verification, testing) and get approval. Then write-plans → implement.
-
-Brainstorming context: Option 1 (columns on `ledger_entry`) approved. Per-actorId SPI key model approved. Next: present complete design covering `AgentKeyProvider` SPI, `AgentSignatureEnricher`, V1005 schema, `LedgerVerificationService.verifyAgentSignature()`.
+**New protocol:** PP-20260517-15bf75 — `ledger-sync-async-parity`: all new ledger service methods must ship both blocking and reactive variants.
 
 ## Open Issues
 
-- #72 — claudony half pending (prompt drafted — send when claudony is free)
-- #79 — bilateral entry signing (in design)
-- Federation wiring issue — to be created in parent repo (not yet filed)
+| # | What | Notes |
+|---|------|-------|
+| #81 | Agent DID/VC identity binding | Research horizon |
+| #82 | Extract LedgerPemUtil | Small refactor, any time |
+| #83 | Closed ✅ | |
+| #84 | Post-quantum migration | Research |
+| #85 | External key distribution (TUF/HSM) | Medium |
+| #86 | Reactive KeyRotationService | Blocks async path bridge removal |
+| #87 | Debug log in verifyCryptographic catch | Minor |
+
+## Immediate Next Step
+
+`gh issue list --repo casehubio/ledger --state open` to see current tracker. Next candidates: **#82** (quick PEM utility refactor) or **#86** (reactive KeyRotationService — follows PP-20260517-15bf75).
 
 ## References
 
 | What | Path |
 |------|------|
-| Latest blog | `blog/2026-05-14-mdp01-quality-at-the-intersection.md` |
-| Latest ADRs (project) | `docs/adr/0009-...`, `docs/adr/0010-...` |
-| Ideas log | `IDEAS.md` (5 new entries added 2026-05-15) |
+| Latest blog | `blog/2026-05-17-mdp01-trust-evidence-architecture.md` |
+| Latest ADRs | `adr/0011-per-actorid-signing-key-model.md`, `adr/0012-key-rotation-design.md` |
+| New protocol | `~/claude/casehub/parent/docs/protocols/casehub/ledger-sync-async-parity.md` |
 | Previous handover | `git show HEAD~1:HANDOFF.md` |
