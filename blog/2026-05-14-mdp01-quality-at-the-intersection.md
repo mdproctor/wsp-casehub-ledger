@@ -7,6 +7,7 @@ entry_type: note
 subtype: diary
 projects: [casehub-ledger]
 tags: [quarkus, trust, schema, sql]
+excerpt: "Knowing an agent is trusted for security reviews doesn't tell you whether they're thorough — adding CAPABILITY_DIMENSION as a fourth trust score type and replacing a leaky scope_key encoding with two explicit nullable columns."
 ---
 
 Knowing an agent is trusted for security reviews tells you they make sound decisions in that domain. It doesn't tell you whether they're thorough. Those are separate questions.

@@ -7,6 +7,7 @@ entry_type: note
 subtype: diary
 projects: [casehub-ledger]
 tags: [quarkus, cdi, trust, spi]
+excerpt: "Adding a trust read-model and import SPI to casehub-ledger so actors arriving from other deployments can bring their reputation with them — without requiring configuration switches in consumer repos."
 ---
 
 The trust model in casehub-ledger has always been local — an actor builds reputation within one deployment through attestations, and that reputation resets to Beta(1,1) = 0.5 wherever they land next. That's fine for a new deployment with new actors. It's frustrating when the actor has a documented track record elsewhere.
