@@ -1,0 +1,15 @@
+epic: epic-reactive-key-service
+project-sha: ce033b012c77c7679f6ea4f075e6fe5649da7e81
+date: 2026-05-17
+issue:
+design-section-hashes:
+  d36e512d ## Purpose
+  ce6eb55d ## Ecosystem Context
+  26b16cb2 ## Further Reading
+  a09ceb07 ## Architecture
+  560b0d15 ## Supplements
+  89a659e7 ## Key Design Decisions
+  448307b0 ## Configuration
+  57155262 ## What Is Deliberately Out of Scope
+  c3e381b5 ## Roadmap
+  704c52d3 ## Implementation Tracker
