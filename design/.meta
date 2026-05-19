@@ -1,0 +1,16 @@
+epic: issue-92-optional-reactive-repo
+project-sha: 1164e2d2059d688e2eb938358061120b88def114
+date: 2026-05-19
+issue: 92
+flyway-next-v: none
+design-section-hashes:
+  d36e512d ## Purpose
+  ce6eb55d ## Ecosystem Context
+  26b16cb2 ## Further Reading
+  a09ceb07 ## Architecture
+  560b0d15 ## Supplements
+  89a659e7 ## Key Design Decisions
+  448307b0 ## Configuration
+  57155262 ## What Is Deliberately Out of Scope
+  c3e381b5 ## Roadmap
+  704c52d3 ## Implementation Tracker
