@@ -1,0 +1,16 @@
+epic: issue-93-agent-signature-verification-service
+project-sha: 0f058502aa47192529ddb969661ab6793285695b
+date: 2026-05-20
+issue: 93
+flyway-next-v: none
+design-section-hashes:
+  d36e512d ## Purpose
+  ce6eb55d ## Ecosystem Context
+  26b16cb2 ## Further Reading
+  a09ceb07 ## Architecture
+  560b0d15 ## Supplements
+  89a659e7 ## Key Design Decisions
+  448307b0 ## Configuration
+  57155262 ## What Is Deliberately Out of Scope
+  c3e381b5 ## Roadmap
+  704c52d3 ## Implementation Tracker
