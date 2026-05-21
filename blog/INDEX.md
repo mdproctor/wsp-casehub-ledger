@@ -2,6 +2,7 @@
 
 | File | Date | Title |
 |------|------|-------|
+| [2026-05-21-mdp03-the-step-that-kept-skipping.md](2026-05-21-mdp03-the-step-that-kept-skipping.md) | 2026-05-21 | work-end skill audit — six publish-blog bypass vectors found and fixed, 30 missing blog entries backfilled across all branches |
 | [2026-04-29-mdp01-what-the-reviews-missed.md](2026-04-29-mdp01-what-the-reviews-missed.md) | 2026-04-29 | Prerequisites #67/#68 and Group A #55/#54/#53 shipped. NULLS NOT DISTINCT rendered the sentinel workaround obsolete. Valence multiplier in decay. Important review findings silently dismissed by the controller — and what to do about it. |
 | [2026-05-01-mdp01-the-sentinel-this-time.md](2026-05-01-mdp01-the-sentinel-this-time.md) | 2026-05-01 | Group B starts. DESIGN.md split. capabilityTag on LedgerAttestation: why NULL smelled and "*" didn't. Two correctness bugs the tests couldn't catch — caught by code review. |
 | [2026-05-05-mdp01-two-models-for-trust.md](2026-05-05-mdp01-two-models-for-trust.md) | 2026-05-05 | #62 shipped. Dimension scores use a decay-weighted average, not Bayesian Beta — why the two models differ, the AttestationVerdict.SOUND trick, and three things code review caught. |
