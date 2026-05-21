@@ -3,49 +3,49 @@
 
 ## Current State
 
-456 tests, BUILD SUCCESS. Both repos on `main`, .m2 installed.
+458 tests, BUILD SUCCESS. Both repos on `main`, `.m2` installed.
 No active branch. All open issues resolved.
 
 ## What Landed This Session
 
-**issue-93-agent-signature-verification-service** (closed):
-- `AgentCryptographicVerifier` — package-private `final` static utility; Ed25519 verify
-  shared by both blocking and reactive tiers; mirrors `LedgerMerkleTree` pattern
-- `AgentSignatureVerificationService` — new blocking bean owning `verifyAgentSignature`
-- `ReactiveAgentSignatureVerificationService` — renamed from `ReactiveLedgerVerificationService`;
-  `verifyCryptographic` duplication eliminated
-- `LedgerVerificationService` — stripped to Merkle-only (`treeRoot`, `inclusionProof`, `verify`)
-- `BlockingTierPurityTest` extended to cover the new blocking bean
-- `LedgerProcessor` updated; design journal merged into `docs/DESIGN.md`
+**ledger#95** (closed): Flyway migrations moved from `classpath:db/migration` to
+`classpath:db/ledger/migration`. `LedgerProcessor` gains `validateFlywayMigrationLocation`
+`@BuildStep` (warns at augmentation when path absent). `FlywayLocationContractTest` pins
+the canonical path. 9 example configs updated to both paths. `mvn clean install` required
+after path move — plain `install` leaves stale copies in JAR; added second contract test
+to catch this.
 
-**Garden:** GE-20260520-45312d — `@InjectMock AgentKeyProvider` silent failure in
-`@QuarkusTest` when enricher runs at `@PrePersist` with no signing key configured
+**qhorus#179** (closed): V1003 `agent_message_ledger_entry` renamed to V2000 (avoids
+conflict with ledger's V1003). `quarkus.flyway.qhorus.locations` updated to include
+`classpath:db/ledger/migration`. `FlywayMigrationSchemaTest` now scans both paths with
+real migrations (stub removed). PLATFORM.md and `ledger-subclass-extension.md` updated
+to V2000+ consumer convention.
 
-**Skill bug filed:** `work-end` does not merge project branch to main — leaves
-implementation on the branch; one manual `git merge --ff-only` needed after close.
-Sent to skills team.
+**work-end skill fix**: Six publish-blog bypass vectors eliminated. 8g folded into 8a
+(runs immediately on workspace main after git push, before returning to epic branch).
+Close plan always shows Publish blog line. Pre-execution acknowledgement when BLOG_COUNT>0.
+Synced to `~/.claude/skills/work-end/SKILL.md` via sync-local.
+
+**Blog backfill**: 30 entries published to mdproctor.github.io — 27 from the rolling
+skip bug, 3 from non-main branches. Cross-branch audit script at `/tmp/find_all_blog_entries.py`.
 
 ## Immediate Next Step
 
-`gh issue list --repo casehubio/ledger --state open` — see current tracker.
-Top candidates: #94 (compile-time parity enforcement, natural follow-on to #93),
-#85 (external key distribution TUF/HSM).
+`gh issue list --repo casehubio/ledger --state open` — check tracker. Top candidates:
+#94 (compile-time blocking/reactive parity enforcement, natural follow-on to #93),
+#85 (external key distribution TUF/HSM for `AgentKeyProvider`).
 
 ## Cross-Module
 
-**Previously blocking (now shipped — consumers need to add property):**
-- `casehub-aml`, `casehub-clinical`, `casehub-devtown` — add
-  `casehub.ledger.reactive.enabled=false` (or omit, it's the default) to build
-  cleanly with #92 changes · XS · Low
-
-**Not yet blocking, but tracked:**
-- `casehub-qhorus#172` — align qhorus with PP-20260519-39a9a5 reactive tier pattern · M · Med
+**Not yet blocking, tracked:**
+- `casehub-qhorus#172` — align qhorus with reactive tier pattern · M · Med
+- `casehubio/aml#26` — consumer apps add `classpath:db/ledger/migration` to Flyway configs
 
 ## What's Left
 
 - `epic-reactive-key-service` workspace branch: no EPIC-CLOSED.md, deletion overdue · XS · Low
-- `issue-92-optional-reactive-repo` workspace branch: no EPIC-CLOSED.md, deletion overdue · XS · Low
-- `issue-93-agent-signature-verification-service` workspace branch: deletion due 2026-06-03 · XS · Low
+- `issue-92-optional-reactive-repo` workspace branch: same · XS · Low
+- `main-pre-retro` project branch: stale 4-week-old branch, delete candidate · XS · Low
 
 ## What's Next
 
@@ -60,5 +60,6 @@ Top candidates: #94 (compile-time parity enforcement, natural follow-on to #93),
 
 | What | Path |
 |------|------|
-| Latest blog | `blog/2026-05-21-mdp01-the-duplication-that-annotated-itself.md` |
+| Latest blog | `blog/2026-05-21-mdp03-the-step-that-kept-skipping.md` |
 | Previous handover | `git show HEAD~1:HANDOFF.md` |
+| Blog audit script | `/tmp/find_all_blog_entries.py` |
