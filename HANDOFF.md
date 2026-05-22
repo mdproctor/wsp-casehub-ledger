@@ -30,6 +30,16 @@ publish.yml workflow, parent workflows updated (dashboard, full-stack, increment
 Bidirectional symlinks and CLAUDE.md cross-references in place. Memory seeded
 for eidos workspace.
 
+## Blocking — Platform Needs to Dispatch to Ledger
+
+casehubio/ledger CI is failing: can't resolve `casehub-platform-api:0.2-SNAPSHOT` because
+platform's `publish.yml` doesn't dispatch to ledger after publishing. Fix belongs in the
+platform Claude session — add to platform's publish.yml `Trigger downstream CI` step:
+```
+gh api repos/casehubio/ledger/dispatches -f event_type=upstream-published ...
+```
+**Do not touch platform — that session is actively writing. Hand this off to them.**
+
 ## Immediate Next Step
 
 Open the eidos workspace and start Phase 1:
