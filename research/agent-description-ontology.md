@@ -664,24 +664,57 @@ Same goal. Same capability. Radically different behaviour from two structured di
 
 **Closes the feedback loop the research is missing.** LDP has the descriptor side. MAST has the failure evidence. Neither connects descriptors to outcomes through an attestation layer. That's the unique position.
 
+### Rendering architecture — strategy decision
+
+**Strategic constraint:** current target is CLAUDE.md (Claude Code format). Future target is any LLM system prompt format. The architecture must support both from the start without the descriptor knowing about either.
+
+**Solution: `SystemPromptRenderer` SPI — same pattern as the rest of casehub.**
+
+```
+AgentDescriptor + CaseGoal + context
+        │
+        ▼
+SystemPromptRenderer  (SPI in casehub-platform-api)
+        │
+        ├── ClaudeMarkdownRenderer   (@DefaultBean — current)
+        ├── OpenAISystemPromptRenderer
+        ├── A2AAgentCardRenderer
+        └── [future — Gemini, Llama, etc.]
+```
+
+The descriptor is the format-agnostic source of truth. The renderer is the format-specific adapter. Adding a new LLM target = new renderer implementation, nothing in the descriptor or SPI changes.
+
+**Hybrid rendering within each renderer:**
+
+| Layer | Tool | What it handles | Determinism |
+|-------|------|----------------|-------------|
+| **Template** | Qute (Quarkus native) | Structural skeleton — role header, goal injection, capability list, format-specific sections (CLAUDE.md has specific section structure) | Fully deterministic |
+| **LLM prose** | Lightweight LLM call | Disposition section only — renders SVO + conscientiousness + context into 2–3 sentences of natural language behavioural instruction | Cached by (descriptor hash + context hash) |
+
+The LLM-for-prose call happens at **descriptor registration time**, not at agent runtime. Generate once, store, reuse. Regenerate only when the descriptor changes. This keeps runtime behaviour deterministic and keeps the generation cost amortised.
+
+**The CLAUDE.md specifics** live entirely inside `ClaudeMarkdownRenderer`. When rendering for other LLMs, none of that leaks into the descriptor or SPI contract.
+
+**ADR candidate:** this decision has real architectural consequences — where the SPI lives, what the renderer contract looks like, how caching works, which module owns `ClaudeMarkdownRenderer`. Should be formalised before implementation.
+
 ### What needs building
 
 | Component | Status | Notes |
 |-----------|--------|-------|
-| `AgentDescriptor` schema | Design phase | Core platform type |
-| `CaseDefinition.Goal` → descriptor injection | Exists in engine | Read the goal; inject it |
-| CLAUDE.md template engine | Not started | Lightweight string templating; no heavy deps |
-| Descriptor → rendered prompt mapping | Not started | Each dimension has a prose rendering rule |
-| Outcome → attestation pipeline | Exists (casehub-ledger) | Already built |
-| Knowledge graph of (descriptor, task, outcome) | Not started | This is the long-game store |
+| `AgentDescriptor` schema | Design phase | Core platform type — `casehub-platform-api` |
+| `SystemPromptRenderer` SPI | Design phase | `casehub-platform-api` — format-agnostic contract |
+| `ClaudeMarkdownRenderer` | Not started | `@DefaultBean` — Qute template + LLM prose call |
+| `CaseDefinition.Goal` → renderer input | Exists in engine | Read the goal; inject into render call |
+| Rendered prompt cache | Not started | Keyed by (descriptor hash + context hash) |
+| Outcome → attestation pipeline | Exists | casehub-ledger — already built |
+| Knowledge graph of (descriptor, task, outcome) | Not started | Long-game store |
 
 ### Open questions
 
-- **What is the rendering unit?** Full CLAUDE.md? Just the system prompt header? A structured preamble? Probably a structured section that agents paste into their own CLAUDE.md rather than a full file replacement.
-- **Who writes the template?** The deployer? The platform? A skill? Probably a platform-provided default template with deployer overrides.
-- **How does the rendering vary by context?** The same SVO value should render differently for an intern reviewer vs. a production gatekeeper — the `context` field shapes the prose.
-- **How do you measure outcome quality?** Attestation verdicts are one signal. Quantitative metrics (PR merge rate, escalation rate, review cycle time) are another. Both should feed the knowledge graph.
-- **Iteration cadence?** How many runs before you have enough signal to prefer one descriptor configuration over another for a given task type?
+- **What is the rendering unit?** A structured section agents include in their own CLAUDE.md, or a full file? Probably a section — agents may have repo-specific content that must coexist.
+- **Which LLM generates the prose?** Any LLM via the platform's configured model. The renderer doesn't hardcode a model.
+- **How does context vary rendering?** `"coaching interns"` vs `"production gatekeeper"` changes the prose for the same SVO value. Context is an explicit field in the render call, not inferred.
+- **Iteration cadence?** How many runs before you have enough signal to prefer one descriptor configuration for a given task type? Probably domain-specific — fast feedback tasks (PR review) vs. slow (clinical decisions).
 
 ---
 
