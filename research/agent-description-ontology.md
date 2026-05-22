@@ -1,6 +1,6 @@
-# Agent Description Ontology — Research
+# Agent Description Ontology — Research Notes
 
-**Status:** Active research — not yet a spec  
+**Status:** Supporting research — see [`agentx.md`](agentx.md) for the synthesised spec  
 **Started:** 2026-05-22  
 **Destination:** `casehub-parent/docs/research/` when mature  
 
