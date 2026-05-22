@@ -2,7 +2,7 @@
 
 **Status:** Pre-implementation spec  
 **Started:** 2026-05-22  
-**Name: Eidos)  
+**Name:** Eidos  
 **Strategy:** Build first. Engage A2A / open standard community when casehub is ready.  
 **Research backing:** `agent-description-ontology.md`, `casehub-platform-vocabulary-validation.md`
 
