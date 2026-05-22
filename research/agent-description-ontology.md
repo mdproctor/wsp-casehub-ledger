@@ -252,28 +252,68 @@ These are complementary. An `AgentDescriptor` in casehub could serialise as an A
 
 A deliberate comparison before any vocabulary decisions. casehub's terminology has been carefully chosen — especially the work/task/goal distinction — and any adoption from AgentO must not reintroduce collisions that were explicitly designed away.
 
-### Term-by-term comparison
+### The casehub taxonomy (as formally defined)
 
-| AgentO concept | casehub equivalent | Verdict |
-|---|---|---|
-| `Task` | `WorkItem` (casehub-work) / `PlanItem` (casehub-engine) / `humanTask` (YAML binding) | **COLLISION — do not import** |
-| `WorkflowPattern` | `CaseDefinition` (CNCF Serverless Workflow layer) | **Overlap — different level, watch for drift** |
-| `WorkflowStep` | `PlanItem` at execution stage | **Overlap — different level, watch for drift** |
-| `Goal` | Not formally defined in casehub | Clean adoption |
-| `Objective` | Not formally defined in casehub | Clean adoption |
-| `Team` | Not in casehub | Clean adoption |
-| `Capability` | `CapabilityTag` (trust scoping in casehub-ledger) | Different levels — coexist safely |
-| `Constraint` | `SlaBreachPolicy`, `ExclusionPolicy` (policy/decision objects) | Different semantic level — do not conflate |
-| `Memory` / `KnowledgeBase` | Not in casehub | Clean adoption |
-| `Environment` | Not in casehub | Clean adoption |
-| `Resource` | Not in casehub | Clean adoption |
-| `Tool` | MCP tools (casehub-qhorus) | Weak overlap, different scope |
-| `LanguageModel` | Implicit in `actorId` model-family | No conflict |
-| `Agent` | `actorId` (casehub-ledger), `CurrentPrincipal` (platform) | Different levels — can coexist |
+ADR-0003 (`engine/adr/0003-work-workitem-task-naming.md`) defines a three-level hierarchy:
 
-### The `Task` collision is load-bearing
+| Term | casehub meaning |
+|------|----------------|
+| **Work** | Generalised assignable unit — top-level concept; automated or human |
+| **WorkItem** | Human-inbox specialisation of Work — claim/inbox semantics, 10-status lifecycle |
+| **Task** | Sub-steps *within* a Work unit — the lowest granularity |
 
-casehub-work explicitly does **not** call WorkItems "Tasks" — the doc notes it is *"deliberately NOT called Task"* because CNCF Serverless Workflow and casehub-engine both use `Task` with distinct, conflicting semantics. Importing AgentO's `Task` vocabulary into any casehub `AgentDescriptor` or platform type would reintroduce exactly the collision that was designed away. **Do not use `Task` in any casehub agent vocabulary.**
+And the engine adds:
+
+| Term | casehub meaning |
+|------|----------------|
+| **Case** | An ACM instance pursuing one or more Goals — the overarching objective |
+| **Goal** | A formal evaluable completion condition on a `CaseDefinition`; fires `GoalReached` event when satisfied; case → COMPLETED when all goals reached |
+| **Milestone** | An intermediate checkpoint within a case; fires `MilestoneReached` |
+| **Binding** | A condition-driven dispatch rule within a case |
+| **PlanItem** | A unit of work within the case plan |
+
+This matters: `Goal` is not merely a desired state string — it is an evaluable expression formally evaluated by the engine. ADR-0007 notes that langchain4j's `GoalOrientedPlanner` is structurally identical to casehub's binding evaluator, and both use the term `Goal` with compatible semantics.
+
+### Term-by-term comparison (corrected)
+
+| AgentO concept | AgentO definition | casehub equivalent | Verdict |
+|---|---|---|---|
+| `Task` | "A specific activity that contributes to achieving a goal" | **Work** (generalised assignable unit) — NOT casehub's `Task` (which is sub-step) | **Semantic mismatch** — AgentO Task ≈ casehub Work, not casehub Task |
+| `Goal` | "An objective or desired state an agent aims to achieve" | `Goal` (formal evaluable completion condition on Case) | **Compatible but casehub is more precise** — casehub's Goal is a machine-evaluable expression, not a desired state string |
+| `Objective` | "A collective objective a team is assigned to accomplish" | **Case** / `CaseDefinition` | **Clean mapping** — a Case IS the objective the agent team is pursuing |
+| `WorkflowPattern` | "Reusable template defining task sequences" | `CaseDefinition` (CNCF Serverless Workflow) | **Different name, similar concept** — different level of abstraction |
+| `WorkflowStep` | "Individual action or phase within a workflow pattern" | `Binding` / `PlanItem` | **Different name, similar concept** |
+| `Team` | "Coordinated group of agents pursuing a common objective" | Pool of Workers on a Case | **Implied, not explicit** — clean adoption |
+| `Capability` | "Abilities performable by an agent" | `CapabilityTag` (trust scoping) | **Different levels** — AgentO Capability is descriptive; casehub CapabilityTag is an evidence-scoping instrument |
+| `Constraint` | Subclass of KnowledgeBase — "rules restricting behaviour" | `SlaBreachPolicy`, `ExclusionPolicy` | **Different semantic level** — casehub constraints are policy/decision objects, not stored knowledge |
+| `Memory` / `KnowledgeBase` | Structured information store | `CaseContext` (blackboard) | **Compatible concept** — casehub's blackboard is the agent's shared working memory |
+| `Environment` | "Surroundings or context in which agent operates" | `CaseContext` + deployment context | **Partial overlap** |
+| `Resource` | "Any asset utilised by agent to perform tasks" | Not in casehub | Clean adoption |
+| `Tool` | "Instrument used by agent to enhance capabilities" | MCP tools (casehub-qhorus) | Weak overlap, different scope |
+| `LanguageModel` | An LLM used by an AI agent | Implicit in `actorId` model-family | No conflict |
+| `Agent` | "Entity capable of perceiving, processing, acting to achieve goals" | Worker (engine) / `actorId` (ledger) | Different levels — coexist |
+
+### The `Task` level mismatch
+
+AgentO's `Task` and casehub's `Task` are at different abstraction levels:
+- **AgentO `Task`** = what most systems call a "Work item" — an assignable unit of work. Maps to casehub `Work`.
+- **casehub `Task`** = sub-step within a Work unit — the finest granularity, below WorkItem.
+
+Don't import AgentO's `Task` vocabulary into any casehub `AgentDescriptor`. If we reference AgentO `Task` we'd need to alias it as `agento:Task` → casehub `Work`, which is confusing. Better to use `Work` directly and contribute a note to AgentO explaining the level distinction.
+
+### `Goal` — casehub is more precise than AgentO
+
+AgentO defines Goal as "an objective or desired state." casehub's `Goal` is a formal completion condition evaluated against `CaseContext` — machine-evaluable, not natural language. When the expression is satisfied, `GoalReached` fires. This is a stronger definition worth contributing back: a `Goal` should have an evaluation mechanism, not just a description.
+
+The same insight is independently reached in langchain4j's `GoalOrientedPlanner` (noted in ADR-0007), which also treats goals as evaluable dependency conditions over agent output keys.
+
+### `Milestone` — casehub has it, AgentO doesn't
+
+`Milestone` (intermediate checkpoint in a case; `MilestoneReached` event) has no equivalent in AgentO. Clean contribution opportunity.
+
+### `Memory` / `KnowledgeBase` — `CaseContext` is casehub's equivalent
+
+AgentO's `Memory` (subclass of KnowledgeBase) and casehub's `CaseContext` (the blackboard — append-via-EventLog shared state) serve the same conceptual role: the agent's working knowledge store. They're implemented very differently (AgentO is an OWL class; CaseContext is a JPA-backed append-only ledger), but the mapping is conceptually clean.
 
 ### Where casehub is ahead of AgentO — the normative layer
 
@@ -292,10 +332,11 @@ The 3-channel normative layout (`work` / `observe` / `oversight`) structures age
 
 ### Vocabulary rules for `AgentDescriptor`
 
-- **Use from AgentO:** `Goal`, `Objective`, `Team`, `Capability`, `Memory`, `Environment`, `Resource` — no conflicts
-- **Do not use:** `Task` — collision with WorkItem/PlanItem distinction
-- **Use carefully:** `WorkflowPattern`, `WorkflowStep` — keep scoped to agent-level description; do not let them bleed into casehub-engine's CaseDefinition/PlanItem layer
-- **Extend:** Add functional role slot, disposition dimensions, trust/attestation model — not in AgentO
+- **Use from AgentO:** `Goal` (with the stronger casehub definition: evaluable condition), `Objective` (mapped to Case), `Team`, `Capability`, `Resource`, `Environment` — no conflicts
+- **Map carefully:** AgentO `Task` → say `Work` in casehub; never import `Task` at this level
+- **Contribute to AgentO:** `Milestone`, the formal Goal evaluation model, the normative layer (speech acts, Commitment, Watchdog)
+- **Use carefully:** `WorkflowPattern`, `WorkflowStep` — keep scoped to agent-level description; do not let them bleed into CaseDefinition/PlanItem layer
+- **Extend:** Functional role slot, disposition dimensions, trust/attestation model — not in AgentO
 
 ---
 
