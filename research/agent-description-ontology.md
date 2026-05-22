@@ -213,6 +213,41 @@ The trust score machinery in casehub-ledger is exactly the evidence layer. The g
 
 ---
 
+## Agent Card Intellectual Lineage
+
+The A2A Agent Card (Google, April 2025) is the current focal point for agent capability advertisement, but the idea has a clear lineage worth understanding before designing anything:
+
+| Source | Era | Contribution | Gap |
+|--------|-----|-------------|-----|
+| **FIPA DF (yellow pages)** | 1990s | Agents register service descriptions; others query by capability. The conceptual origin. | Dormant; no adoption in LLM space |
+| **W3C WoT Thing Description** | 2017–present | IoT devices self-publish structured JSON-LD at a well-known URL. A2A adopted this pattern directly. More mature than A2A — has SPARQL discovery, federation, the full stack. | Domain-specific (IoT); no agent behavioural model |
+| **OpenAPI specs** | 2010s | Operation-level capability description (name, description, input/output schema). A2A Agent Card skills are structurally identical to OpenAPI operations. | Describes APIs, not agents |
+| **DNS** | 1980s | Human-readable names resolved to addresses. The ANS (Agent Naming Service) pattern that Solo.io and OWASP both propose is DNS for agents. | Infrastructure only; no semantic content |
+| **A2A Agent Card** | April 2025 | Synthesises the above: `/.well-known/agent-card.json` (WoT pattern), skills catalog (OpenAPI pattern), signed cards (PKI), discovery via registry (FIPA DF pattern). | Registry/federation explicitly unspecified; no functional role, disposition, or trust evidence |
+
+### What the Infrastructure Layer Looks Like Now
+
+**Solo.io** identifies three missing pieces A2A intentionally omits:
+- **Agent Registry** — central catalog with governance/approval
+- **Agent Naming Service (ANS)** — semantic/vector search across capabilities (understands "foreign exchange" → surfaces "forex"/"FX" agents)
+- **Agent Gateway** — name resolution, security enforcement, observability, load balancing
+
+Source: [Solo.io blog](https://www.solo.io/blog/agent-discovery-naming-and-resolution---the-missing-pieces-to-a2a) / [agentgateway.dev](https://agentgateway.dev/)
+
+**OWASP ANS (v1.0)** — security-focused naming service. Encodes four dimensions in a structured name: protocol (A2A/MCP/ACP), capability, provider, version. Uses PKI + Zero-Knowledge Proofs for capability validation without exposing sensitive details. DNS for agents with anti-poisoning protection.
+
+Source: [OWASP ANS](https://genai.owasp.org/resource/agent-name-service-ans-for-secure-al-agent-discovery-v1-0/)
+
+### Where Our Angle Differs
+
+Solo.io and OWASP are both building **infrastructure** (registry, naming, gateway, security). They take the Agent Card format as given and add the plumbing around it.
+
+We are asking what **goes on the card** — what dimensions beyond skills/tools/auth should an agent self-declare, and how does actual observed behaviour (attestations, trust scores) validate or challenge those declarations.
+
+These are complementary. An `AgentDescriptor` in casehub could serialise as an A2A Agent Card extension — interoperable with the ecosystem, while adding the functional role, disposition, and trust evidence dimensions that A2A intentionally leaves out.
+
+---
+
 ## Open Questions
 
 1. **Where does the descriptor live?** `casehub-platform-api` type? New `casehub-agent-registry` module? Both?
