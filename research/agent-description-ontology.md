@@ -248,6 +248,28 @@ These are complementary. An `AgentDescriptor` in casehub could serialise as an A
 
 ---
 
+## Implementation Philosophy: Ontologies as Design Tools, Not Runtime Dependencies
+
+**The heavy semantic web stack (Jena, RDF4J, OWL API, JADE, Jason) does not belong in casehub.**
+
+These are triplestore and reasoning engines — 150MB+ of infrastructure for storing and querying RDF graphs. casehub-ledger is a Quarkus extension that must be lightweight and zero-cost when idle. Pulling in a triplestore to model a handful of fields on an agent descriptor is the wrong tradeoff.
+
+The distinction:
+
+| Use | Right approach |
+|-----|---------------|
+| **Design** — what concepts to model, what to call them, how they relate | Read the ontologies (DOLCE, PROV-O, AgentO, OWL-S). Use them as a vocabulary reference and structural guide. Contribute extensions back. Ship none of it. |
+| **Runtime** — the `AgentDescriptor` type in a platform library | Plain Java records. Well-chosen field names that align with ontological concepts. Zero deps beyond what Quarkus already has. |
+| **Serialisation** — making descriptors interoperable | JSON-LD with an inline `@context`. Jackson is already in Quarkus. The context is a string constant. |
+| **Discovery / registry** — SPARQL queries over descriptors | Separate optional module. Consumers who need it add it. Not in the platform API. Same pattern as casehub-ledger's reactive tier: opt-in, build-time gated. |
+
+**The concrete rule:** take the vocabulary from the ontologies; leave the infrastructure behind. AgentO tells us what to call things and how they relate — `Capability`, `Goal`, `Tool`, `Team`, `Constraint`. It does not tell us to embed a Jena triplestore. The JSON-LD `@context` is what links the record fields to the shared ontological vocabulary at wire level — no reasoner required.
+
+**When heavier infrastructure becomes justified:**  
+Only if a specific consumer needs inference (e.g., "find all agents whose declared capabilities satisfy constraint X via OWL reasoning") or federated SPARQL queries across multiple registries. That's an optional module in a consuming repo, not a platform library concern.
+
+---
+
 ## Open Questions
 
 1. **Where does the descriptor live?** `casehub-platform-api` type? New `casehub-agent-registry` module? Both?
