@@ -268,17 +268,141 @@ These are complementary. An `AgentDescriptor` in casehub could serialise as an A
 
 ---
 
+## Citation Trail Findings
+
+### Convergence Point: DOLCE → PROV-O → AgentO
+
+Every paper in the citation trail aligns on the same ontological lineage:
+
+**DOLCE (Descriptive Ontology for Linguistic and Cognitive Engineering)**  
+The foundational upper ontology. All agent/capability papers ground their concepts here. DOLCE-Ultralite (OWL form, developed at Italy's Lab for Applied Ontology) is the concrete artefact. The key concepts: objects, events, agents, actions — defined with formal semantics that make reasoning possible. All five starting papers align here.
+
+**PROV-O (W3C PROV Ontology — W3C Recommendation)**  
+Describes provenance: Agent → Activity → Entity. Captures responsibility, action attribution, audit trails. Already used by casehub-ledger via `LedgerProvExportService` / `LedgerProvSerializer` for W3C PROV-DM JSON-LD export. This is not coincidence — the provenance layer the research community identifies as critical is already built. Direct reuse opportunity.
+
+**AgentO (ESWC 2026, MIT licence)**  
+OWL/RDF ontology for agentic AI. Built from 66 real agentic workflows across AutoGen, MetaGPT, CAMEL, CrewAI. 15 core classes:
+
+| Class | What it models |
+|-------|---------------|
+| `Agent` | The agent entity |
+| `Capability` | What the agent can do |
+| `Goal` / `Objective` | What it's trying to achieve |
+| `Task` / `WorkflowStep` | Units of work |
+| `Tool` / `Resource` | What it uses |
+| `Memory` / `KnowledgeBase` | What it knows |
+| `Team` | Multi-agent composition |
+| `Constraint` | Limits on behaviour |
+| `Environment` | Operating context |
+| `LanguageModel` | The LLM backing |
+| `WorkflowPattern` | Reusable workflow structures |
+
+Public SPARQL endpoint: `https://w3id.org/agentic-ai/sparql`  
+GitHub: https://github.com/agentic-patterns/agentic-ai-onto  
+
+**Current state:** 12 commits, 1 star, 0 forks. Solid ontological foundation, negligible community. MIT licence means it's a direct adoption target — and low adoption means there's genuine room to shape it through contribution.
+
+**What AgentO is missing** (from our perspective):
+- Functional role slot (orchestrator / executor / critic / monitor)
+- Behavioural disposition dimensions
+- Trust / attestation concepts
+- Identity versioning model
+
+These are exactly the dimensions we've identified as the gap in the ecosystem. Contributing them upstream to AgentO is a concrete path.
+
+---
+
+### Supporting Ontologies Worth Reusing
+
+**OWL-S** (W3C submission) — semantic markup for web services. Describes capabilities as ServiceProfile (what it does), ServiceModel (how it works), ServiceGrounding (protocol binding). Mature; cited across all capability papers. Maps cleanly to AgentO's `Capability` class.
+
+**OASIS W3C Community Group** — Ontology for Agents, Systems, and Integration of Services. OWL 2 formalisation, versions 1.0 and 2 available. Active CG; formal standards alignment opportunity. Entry: https://www.w3.org/community/oasis/oasis-version-2/
+
+**WebAgents CG** — W3C Community Group on agent interoperability and autonomy on the web. Convergence with WoT Thing Description underway.
+
+---
+
+### JVM Library Landscape
+
+The semantic web / agent ecosystem has mature JVM libraries. No greenfield needed:
+
+#### Semantic Web / Ontology
+
+| Library | What it does | Status | Key link |
+|---------|-------------|--------|---------|
+| **Apache Jena** | RDF/OWL graph management, SPARQL, inference | Production | [jena.apache.org](https://jena.apache.org/) |
+| **Eclipse RDF4J** | Triplestore, SPARQL endpoints, LMDB/Lucene backends | Production (v5.3.0, Apr 2026) | [rdf4j.org](https://rdf4j.org/) |
+| **OWL API** | Parse/manipulate OWL, reasoner integration | Production | [github.com/owlcs/owlapi](https://github.com/owlcs/owlapi) |
+| **ELK Reasoner** | OWL 2 EL reasoning (polynomial time, handles large ontologies) | Production | Protégé plugin |
+| **Pellet** | OWL DL reasoning + SWRL rules | Production | via OWL API |
+
+#### W3C WoT Thing Description
+
+| Library | What it does | Status |
+|---------|-------------|--------|
+| **wot-td-java** (Interactions-HSG) | Fluent API for constructing TDs; HTTP/CoAP request execution | Stable — [GitHub](https://github.com/Interactions-HSG/wot-td-java) |
+| **wot-jtd** (OEG-UPM) | ORM for Thing Descriptions, SHACL validation | Stable — [GitHub](https://github.com/oeg-upm/wot-jtd) |
+| **wot-servient** (sane-city) | Full W3C WoT architecture in Java | Available — [GitHub](https://github.com/sane-city/wot-servient) |
+| **Thingweb Directory** | TD directory service with SPARQL query | Available |
+
+WoT Thing Description 2.0 first public working draft published November 2025. No Quarkus extension exists — gap worth filling.
+
+#### Agent Frameworks
+
+| Library | What it does | Status |
+|---------|-------------|--------|
+| **JADE** | FIPA-compliant Java agent platform; AMS/DF white/yellow pages built in | Production — [jade.tilab.com](https://jade.tilab.com/) |
+| **Jason** | BDI AgentSpeak interpreter in Java; LGPL | Production — [jason-lang.github.io](https://jason-lang.github.io/) |
+
+---
+
+### JSON-LD / Schema.org for Web-Scale Discovery
+
+Schema.org + JSON-LD is the de facto standard for describing entities on the web. In 2025–2026, AI crawlers (ChatGPT, Perplexity, Bing Copilot) actively parse `<script type="application/ld+json">` tags. 47.6% of top 10M websites now include JSON-LD.
+
+For agent discovery this matters: an `AgentDescriptor` serialised as JSON-LD with schema.org vocabulary is immediately legible to web-scale AI without any proprietary registry. The `Action` type + `agent` property (type `SoftwareApplication`) is the current pattern.
+
+Mapping path: `AgentDescriptor` → AgentO OWL → JSON-LD serialisation → schema.org compatibility layer → A2A Agent Card extension.
+
+---
+
+### Contribution Opportunities
+
+| Target | What to contribute | Entry point |
+|--------|-------------------|-------------|
+| **AgentO** | Functional role slot, disposition dimensions, trust/attestation concepts, identity versioning | [github.com/agentic-patterns/agentic-ai-onto](https://github.com/agentic-patterns/agentic-ai-onto) |
+| **OASIS W3C CG** | LLM-specific agent extensions to the OWL 2 formalisation | [w3.org/community/oasis](https://www.w3.org/community/oasis/oasis-version-2/) |
+| **WebAgents CG** | Agent trust and attestation model | W3C CG directory |
+| **wot-td-java or Quarkus** | Quarkus extension for WoT Thing Description | No extension exists |
+| **A2A ecosystem** | Extended Agent Card schema with disposition/role dimensions | [a2aproject/A2A](https://github.com/a2aproject/A2A) |
+
+---
+
 ## Areas to Keep Digging
 
-- [ ] Read AgentO paper in full (ESWC 2026) — most relevant academic work
-- [ ] A2A Discussion #741 — what the community is converging on for registry/federation
-- [ ] LDP paper (arXiv:2603.08852) — how they model reasoning profiles and quality hints
-- [ ] WoT Thing Description Directory spec — best worked example of semantic discovery
-- [ ] BDI ontology (arXiv:2511.17162) — does belief/desire/intention decomposition add anything useful?
-- [ ] OIDC-A proposal — how delegation chains are modelled; relevant to `delegation: boolean`
-- [ ] CoSAI Workstream 4 — what architectural principles they've settled on
-- [ ] Agentic AI taxonomy (arXiv:2601.12560) — six-component model: Perception, Brain, Planning, Action, Tool Use, Collaboration
-- [ ] Is there prior work on *attestable* capability claims? (Not just self-declared)
+**Ontology / standards:**
+- [ ] Read AgentO OWL file in full — map all 15 classes + properties to proposed dimensions; identify what we'd extend vs. add
+- [ ] OWL-S ServiceProfile spec — how it models input/output/preconditions; map to AgentO `Capability`
+- [ ] OASIS W3C CG version 2 — what's in the OWL 2 formalisation; is it worth contributing to vs. AgentO?
+- [ ] BDI ontology (arXiv:2511.17162) — does belief/desire/intention decomposition add anything useful beyond Goal/Objective in AgentO?
+- [ ] WoT Thing Description Directory spec — best worked example of semantic discovery; map affordances to agent capabilities
+- [ ] WoT TD 2.0 first public working draft (November 2025) — what changed; worth building a Quarkus extension?
+
+**Protocols:**
+- [ ] LDP paper (arXiv:2603.08852) in full — how they model reasoning profiles and quality hints; map to disposition dimensions
+- [ ] A2A Discussion #741 — what the community is converging on for registry/federation; where to plug in
+- [ ] OIDC-A proposal — delegation chain model; relevant to `delegation` dimension and multi-agent trust chains
+- [ ] CoSAI Workstream 4 — what architectural principles they've settled on; where trust evidence fits
+
+**Theory / depth:**
+- [ ] Agentic AI taxonomy (arXiv:2601.12560) — six-component model (Perception, Brain, Planning, Action, Tool Use, Collaboration); does it map to AgentO classes?
+- [ ] Is there prior work on *attestable* capability claims — not just self-declared, but peer-verified?
+- [ ] AlphaStar strategy latent / behavioural niche — how to encode diversity as a dimension without over-specifying
+
+**Code / libraries:**
+- [ ] Run AgentO Turtle file through Jena — what can be inferred; how hard to embed in a Quarkus app
+- [ ] wot-jtd SHACL validation — can it validate an AgentDescriptor shape?
+- [ ] JADE DF (yellow pages) source — compare to what we'd need for a casehub registry; is reuse viable or is JADE too heavyweight?
 
 ---
 
