@@ -718,6 +718,35 @@ The LLM-for-prose call happens at **descriptor registration time**, not at agent
 
 ---
 
+## Ecosystem Fragmentation Warning
+
+**Observed 2026-05-22 via A2A Discussion #1631.**
+
+The agent trust/reputation problem is attracting proprietary solutions, not a converging standard. Multiple independent implementations are being built in parallel, each anchoring on different technology choices:
+
+| Party | Approach | Technology bet | Risk |
+|-------|----------|---------------|------|
+| ARP (makito20256) | Append-only transaction ledger, deterministic scoring | Custom "trust substrate" protocol, own URI namespace | Proprietary lock-in |
+| MoltBridge (JKHeadley) | Ed25519-signed attestations + graph traversal | Neo4j, "credibility packets" | Platform-specific |
+| laplace0x | On-chain identity as trust substrate | ERC-8004, Ethereum | Blockchain dependency |
+| Dispute resolution proposals | Escrow-bound dispute layer | Unspecified | Fragmented on top of fragmented |
+
+**None of these are coordinating on a shared standard.** They are all responding to the same Discussion #1631 thread but building separate proprietary solutions. Classic early-market fragmentation — same pattern as pre-HTTP networking protocols, pre-OAuth identity, pre-OpenAPI API description.
+
+**What this means for AgentX:**
+
+1. **The problem is unambiguously real.** People don't spend engineering effort on theoretical problems. The fragmentation confirms the gap.
+
+2. **The standard is not yet settled.** A2A Discussion #1631 is at draft v0.0.3. The window to influence the canonical solution is open — but it closes once one of these gets production deployment and ecosystem lock-in.
+
+3. **casehub's posture is different from every party in that thread.** We are not building a proprietary trust substrate. We are building a platform capability that sits on open standards (A2A extension mechanism, JWS, PROV-O) and contributes back. That's a stronger long-term position.
+
+4. **Strategic question unresolved:** when we engage, do we engage as a casehub-specific implementation, or do we attempt to propose something that becomes the open standard? The latter is harder but more valuable to the ecosystem. Both are viable; the choice shapes how we frame the contribution.
+
+**The anti-gaming gap nobody has solved:** Discussion #1631 identified Sybil attacks (synthetic agent networks rating each other) and trust-building-then-exploit as real threats. None of the proposals have a complete answer. casehub-ledger's bilateral signing + key rotation + SUSPECT detection addresses the identity layer of this — but the social gaming attack (real agents colluding) is still open for everyone.
+
+---
+
 ## Areas to Keep Digging
 
 The core research question is: **how do you describe an individual LLM agent's identity, characteristics, and capabilities so it can be discovered and its claims validated by trust evidence?** AgentO is out of scope for this — it describes system topology, not individual agents.
