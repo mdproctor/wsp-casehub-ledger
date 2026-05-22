@@ -248,95 +248,23 @@ These are complementary. An `AgentDescriptor` in casehub could serialise as an A
 
 ---
 
-## AgentO Taxonomy vs. casehub Terminology
+## casehub Vocabulary Alignment
 
-A deliberate comparison before any vocabulary decisions. casehub's terminology has been carefully chosen — especially the work/task/goal distinction — and any adoption from AgentO must not reintroduce collisions that were explicitly designed away.
+> **Moved to separate doc.** The detailed taxonomy comparison between AgentO and casehub lives in [`casehub-platform-vocabulary-validation.md`](casehub-platform-vocabulary-validation.md). AgentO describes the *parts of an agentic system* (topology, workflows, coordination) — it is out of scope for per-agent description and discovery. The vocabulary validation is useful context for how casehub fits into the broader ecosystem, but it does not inform the `AgentDescriptor` design.
 
-### The casehub taxonomy (as formally defined)
-
-ADR-0003 (`engine/adr/0003-work-workitem-task-naming.md`) defines a three-level hierarchy:
-
-| Term | casehub meaning |
-|------|----------------|
-| **Work** | Generalised assignable unit — top-level concept; automated or human |
-| **WorkItem** | Human-inbox specialisation of Work — claim/inbox semantics, 10-status lifecycle |
-| **Task** | Sub-steps *within* a Work unit — the lowest granularity |
-
-And the engine adds:
-
-| Term | casehub meaning |
-|------|----------------|
-| **Case** | An ACM instance pursuing one or more Goals — the overarching objective |
-| **Goal** | A formal evaluable completion condition on a `CaseDefinition`; fires `GoalReached` event when satisfied; case → COMPLETED when all goals reached |
-| **Milestone** | An intermediate checkpoint within a case; fires `MilestoneReached` |
-| **Binding** | A condition-driven dispatch rule within a case |
-| **PlanItem** | A unit of work within the case plan |
-
-This matters: `Goal` is not merely a desired state string — it is an evaluable expression formally evaluated by the engine. ADR-0007 notes that langchain4j's `GoalOrientedPlanner` is structurally identical to casehub's binding evaluator, and both use the term `Goal` with compatible semantics.
-
-### Term-by-term comparison (corrected)
-
-| AgentO concept | AgentO definition | casehub equivalent | Verdict |
-|---|---|---|---|
-| `Task` | "A specific activity that contributes to achieving a goal" | **Work** (generalised assignable unit) — NOT casehub's `Task` (which is sub-step) | **Semantic mismatch** — AgentO Task ≈ casehub Work, not casehub Task |
-| `Goal` | "An objective or desired state an agent aims to achieve" | `Goal` (formal evaluable completion condition on Case) | **Compatible but casehub is more precise** — casehub's Goal is a machine-evaluable expression, not a desired state string |
-| `Objective` | "A collective objective a team is assigned to accomplish" | **Case** / `CaseDefinition` | **Clean mapping** — a Case IS the objective the agent team is pursuing |
-| `WorkflowPattern` | "Reusable template defining task sequences" | `CaseDefinition` (CNCF Serverless Workflow) | **Different name, similar concept** — different level of abstraction |
-| `WorkflowStep` | "Individual action or phase within a workflow pattern" | `Binding` / `PlanItem` | **Different name, similar concept** |
-| `Team` | "Coordinated group of agents pursuing a common objective" | Pool of Workers on a Case | **Implied, not explicit** — clean adoption |
-| `Capability` | "Abilities performable by an agent" | `CapabilityTag` (trust scoping) | **Different levels** — AgentO Capability is descriptive; casehub CapabilityTag is an evidence-scoping instrument |
-| `Constraint` | Subclass of KnowledgeBase — "rules restricting behaviour" | `SlaBreachPolicy`, `ExclusionPolicy` | **Different semantic level** — casehub constraints are policy/decision objects, not stored knowledge |
-| `Memory` / `KnowledgeBase` | Structured information store | `CaseContext` (blackboard) | **Compatible concept** — casehub's blackboard is the agent's shared working memory |
-| `Environment` | "Surroundings or context in which agent operates" | `CaseContext` + deployment context | **Partial overlap** |
-| `Resource` | "Any asset utilised by agent to perform tasks" | Not in casehub | Clean adoption |
-| `Tool` | "Instrument used by agent to enhance capabilities" | MCP tools (casehub-qhorus) | Weak overlap, different scope |
-| `LanguageModel` | An LLM used by an AI agent | Implicit in `actorId` model-family | No conflict |
-| `Agent` | "Entity capable of perceiving, processing, acting to achieve goals" | Worker (engine) / `actorId` (ledger) | Different levels — coexist |
-
-### The `Task` level mismatch
-
-AgentO's `Task` and casehub's `Task` are at different abstraction levels:
-- **AgentO `Task`** = what most systems call a "Work item" — an assignable unit of work. Maps to casehub `Work`.
-- **casehub `Task`** = sub-step within a Work unit — the finest granularity, below WorkItem.
-
-Don't import AgentO's `Task` vocabulary into any casehub `AgentDescriptor`. If we reference AgentO `Task` we'd need to alias it as `agento:Task` → casehub `Work`, which is confusing. Better to use `Work` directly and contribute a note to AgentO explaining the level distinction.
-
-### `Goal` — casehub is more precise than AgentO
-
-AgentO defines Goal as "an objective or desired state." casehub's `Goal` is a formal completion condition evaluated against `CaseContext` — machine-evaluable, not natural language. When the expression is satisfied, `GoalReached` fires. This is a stronger definition worth contributing back: a `Goal` should have an evaluation mechanism, not just a description.
-
-The same insight is independently reached in langchain4j's `GoalOrientedPlanner` (noted in ADR-0007), which also treats goals as evaluable dependency conditions over agent output keys.
-
-### `Milestone` — casehub has it, AgentO doesn't
-
-`Milestone` (intermediate checkpoint in a case; `MilestoneReached` event) has no equivalent in AgentO. Clean contribution opportunity.
-
-### `Memory` / `KnowledgeBase` — `CaseContext` is casehub's equivalent
-
-AgentO's `Memory` (subclass of KnowledgeBase) and casehub's `CaseContext` (the blackboard — append-via-EventLog shared state) serve the same conceptual role: the agent's working knowledge store. They're implemented very differently (AgentO is an OWL class; CaseContext is a JPA-backed append-only ledger), but the mapping is conceptually clean.
-
-### Where casehub is ahead of AgentO — the normative layer
-
-AgentO's normative model: `Constraint` as a subclass of `KnowledgeBase` — stored rules that restrict or guide agent behaviour. This is a knowledge-representation concept, not a deontic model.
-
-casehub-qhorus has a full 4-layer normative accountability framework grounded in Austin/Searle speech act theory:
-
-1. **Illocutionary** — what was said: 9 speech-act types (Directive, Commissive, Assertive, Declarative, Expressive, etc.)
-2. **Commitment** — what was obligated: `Commitment` entity with 7-state lifecycle (OPEN → FULFILLED / FAILED / EXPIRED / ...)
-3. **Temporal** — when obligations become stale: Watchdog, deadline enforcement
-4. **Enforcement** — casehub-engine orchestration reacts to commitment outcomes via CDI events
-
-The 3-channel normative layout (`work` / `observe` / `oversight`) structures agent-to-agent and agent-to-human interactions. This is a genuine deontic model — obligations, commitments, temporal validity — that AgentO does not have in any form.
-
-**This is a contribution opportunity, not an import.** casehub's normative model is what we'd give to AgentO, not take from it.
+**Summary findings** (details in the separate doc):
+- AgentO `Task` ≈ casehub `Work` (not casehub `Task`, which is sub-step) — level mismatch, not a collision
+- AgentO `Goal` maps to casehub `Goal` — casehub's definition is stronger (evaluable expression, not desired state string)
+- AgentO `Objective` maps to casehub `Case` — the overarching thing a team pursues
+- casehub's 4-layer normative model (speech acts, Commitment, Watchdog, CDI enforcement) far exceeds what AgentO has — contribution direction, not import
 
 ### Vocabulary rules for `AgentDescriptor`
 
-- **Use from AgentO:** `Goal` (with the stronger casehub definition: evaluable condition), `Objective` (mapped to Case), `Team`, `Capability`, `Resource`, `Environment` — no conflicts
-- **Map carefully:** AgentO `Task` → say `Work` in casehub; never import `Task` at this level
-- **Contribute to AgentO:** `Milestone`, the formal Goal evaluation model, the normative layer (speech acts, Commitment, Watchdog)
-- **Use carefully:** `WorkflowPattern`, `WorkflowStep` — keep scoped to agent-level description; do not let them bleed into CaseDefinition/PlanItem layer
-- **Extend:** Functional role slot, disposition dimensions, trust/attestation model — not in AgentO
+For the `AgentDescriptor` design — what goes on the card for a single LLM agent:
+
+- Avoid `Task` at this level — use `Work` or `Capability` depending on context
+- `Goal`, `Team`, `Resource`, `Environment` — clean adoptions, no conflicts
+- Add: functional role slot, disposition dimensions, trust/attestation model — nothing in the ecosystem has these yet
 
 ---
 
@@ -394,7 +322,9 @@ The foundational upper ontology. All agent/capability papers ground their concep
 **PROV-O (W3C PROV Ontology — W3C Recommendation)**  
 Describes provenance: Agent → Activity → Entity. Captures responsibility, action attribution, audit trails. Already used by casehub-ledger via `LedgerProvExportService` / `LedgerProvSerializer` for W3C PROV-DM JSON-LD export. This is not coincidence — the provenance layer the research community identifies as critical is already built. Direct reuse opportunity.
 
-**AgentO (ESWC 2026, MIT licence)**  
+**AgentO (ESWC 2026, MIT licence) — system topology vocabulary, not agent description**  
+> ⚠️ **Scope note:** AgentO describes the *parts of an agentic system* — architecture, coordination patterns, workflow structure. It is **not** a vocabulary for describing individual LLM agents or making them discoverable. It is out of scope for the `AgentDescriptor` design problem. Retained here as context only — useful if we ever want to formally describe what casehub *is* as a system.
+
 OWL/RDF ontology for agentic AI. Built from 66 real agentic workflows across AutoGen, MetaGPT, CAMEL, CrewAI. 15 core classes:
 
 | Class | What it models |
@@ -494,29 +424,28 @@ Mapping path: `AgentDescriptor` → AgentO OWL → JSON-LD serialisation → sch
 
 ## Areas to Keep Digging
 
-**Ontology / standards:**
-- [ ] Read AgentO OWL file in full — map all 15 classes + properties to proposed dimensions; identify what we'd extend vs. add
-- [ ] OWL-S ServiceProfile spec — how it models input/output/preconditions; map to AgentO `Capability`
-- [ ] OASIS W3C CG version 2 — what's in the OWL 2 formalisation; is it worth contributing to vs. AgentO?
-- [ ] BDI ontology (arXiv:2511.17162) — does belief/desire/intention decomposition add anything useful beyond Goal/Objective in AgentO?
-- [ ] WoT Thing Description Directory spec — best worked example of semantic discovery; map affordances to agent capabilities
-- [ ] WoT TD 2.0 first public working draft (November 2025) — what changed; worth building a Quarkus extension?
+The core research question is: **how do you describe an individual LLM agent's identity, characteristics, and capabilities so it can be discovered and its claims validated by trust evidence?** AgentO is out of scope for this — it describes system topology, not individual agents.
 
-**Protocols:**
-- [ ] LDP paper (arXiv:2603.08852) in full — how they model reasoning profiles and quality hints; map to disposition dimensions
-- [ ] A2A Discussion #741 — what the community is converging on for registry/federation; where to plug in
-- [ ] OIDC-A proposal — delegation chain model; relevant to `delegation` dimension and multi-agent trust chains
-- [ ] CoSAI Workstream 4 — what architectural principles they've settled on; where trust evidence fits
+**Per-agent description — the actual problem:**
+- [ ] LDP paper (arXiv:2603.08852) in full — the most directly relevant work; adds model identity, reasoning profile, quality hints as first-class fields on a per-agent description. Map their fields to our proposed dimensions.
+- [ ] A2A Agent Card spec in detail — what exactly goes in a skill object; can it be extended without breaking compatibility?
+- [ ] A2A Discussion #741 — registry/federation proposals; where does a casehub registry plug in?
+- [ ] OIDC-A proposal — delegation chain model; how does it interact with `delegation` dimension and multi-agent trust chains?
+- [ ] FIPA Agent Description (DF) in detail — the cleanest solved example of per-agent capability advertisement for discovery; what can we reuse conceptually?
 
-**Theory / depth:**
-- [ ] Agentic AI taxonomy (arXiv:2601.12560) — six-component model (Perception, Brain, Planning, Action, Tool Use, Collaboration); does it map to AgentO classes?
-- [ ] Is there prior work on *attestable* capability claims — not just self-declared, but peer-verified?
-- [ ] AlphaStar strategy latent / behavioural niche — how to encode diversity as a dimension without over-specifying
+**Behavioural disposition — the missing axis:**
+- [ ] AlphaStar strategy latent / `main_exploiter` / `league_exploiter` roles — how does RL formalise behavioural niche? Does it suggest anything for the disposition model?
+- [ ] Is there prior work on *attestable* disposition claims — not just self-declared, but peer-verified over time?
+- [ ] MAST failure taxonomy (1,600 traces — 36.9% inter-agent misalignment) — does typed disposition reduce misalignment? Any empirical data?
 
-**Code / libraries:**
-- [ ] Run AgentO Turtle file through Jena — what can be inferred; how hard to embed in a Quarkus app
-- [ ] wot-jtd SHACL validation — can it validate an AgentDescriptor shape?
-- [ ] JADE DF (yellow pages) source — compare to what we'd need for a casehub registry; is reuse viable or is JADE too heavyweight?
+**Discovery / registry:**
+- [ ] WoT Thing Description Directory spec — the most mature discovery implementation; how does SPARQL search work over TD properties? Map to `AgentDescriptor` fields.
+- [ ] WoT TD 2.0 first public working draft (November 2025) — what changed from 1.1; is a Quarkus extension worth building?
+- [ ] a2a-registry.org approach — how does semantic/vector search work in practice; what query model?
+
+**Trust evidence layer:**
+- [ ] Is there prior work connecting self-declared capability claims to attestation/verification? (Not just OIDC token claims — actual peer evidence)
+- [ ] CoSAI Workstream 4 — what architectural principles they've settled on for agent trust
 
 ---
 
