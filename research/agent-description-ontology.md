@@ -183,16 +183,24 @@ protocols : list of supported interaction protocols
 
 ### Layer 4 — Behavioural Disposition (the "how")
 ```
-autonomy    : full | supervised | human_in_loop
-delegation  : boolean (can spawn sub-agents)
-orderPref   : lawful | neutral | chaotic
-otherWeight : collaborative | neutral | competitive
+autonomy       : full | supervised | human_in_loop
+delegation     : boolean (can spawn sub-agents)
+socialOrient   : altruist | prosocial | individualist | competitive   (SVO axis)
+ruleFollowing  : rigid | flexible | autonomous                        (Conscientiousness axis)
+riskAppetite   : conservative | balanced | aggressive                 (optional — not yet formalised)
 ```
-`orderPref` + `otherWeight` is the D&D alignment model applied to agents.  
-Game example: ruthless = competitive + chaotic. Kind = collaborative + lawful.  
-Trust example: cautious orchestrator = lawful + supervised; exploratory researcher = chaotic + full autonomy.
 
-*These are self-declared at registration.* Attestations and trust scores become the *evidence layer* that validates or challenges them over time — which is the unique casehub contribution.
+**Social orientation (SVO)** replaces the earlier D&D-inspired `otherWeight`. Social Value Orientation is the best-empirically-grounded disposition axis in the literature — validated in behavioural economics, multi-agent RL, and now LLMs (2025–2026). Four-value closed vocabulary. Observable from allocation and cooperation decisions. "Ruthless" = competitive; "kind" = prosocial/altruist.
+
+**Rule-following (Conscientiousness axis)** replaces `orderPref` (lawful→chaotic). Predictive of cooperation and consistency in LLMs. Steerable via representation engineering. Observable from rule adherence, planning behaviour, recovery from ambiguity.
+
+**Risk appetite** keeps emerging from RL exploiter roles and behavioural economics but lacks standard vocabulary. Practically critical for routing decisions (conservative agent for high-stakes tasks; aggressive for open-ended exploration) but not yet formalised enough for a closed vocabulary.
+
+**D&D alignment is dropped.** Intuitively appealing but no academic validation; largely duplicates SVO (good–evil ≈ prosocial–competitive) and Conscientiousness (law–chaos ≈ rigid–autonomous). Not a good foundation.
+
+**Critical finding — behavioural consistency is weak.** Agents exhibit *disposition as response to context* rather than stable traits. Self-declared disposition diverges from actual behaviour across contexts. This makes the attestation layer essential, not optional — you cannot trust a declared SVO profile; peer attestation over time is the only way to validate it. Directly explains MAST FM-2.6 (reasoning-action mismatch, 13.2%): declared disposition is unreliable without evidence.
+
+*All disposition fields are self-declared at registration.* Attestations and trust scores are the *evidence layer* that validates or challenges them — the unique casehub contribution.
 
 ---
 
@@ -550,12 +558,58 @@ FM-1.2: Disobey role specification → explicitly cascades into FC2 misalignment
 
 ---
 
+## Disposition Research — What Six Threads Found
+
+### What converges
+
+Two axes recur independently across behavioural economics, game AI, HRI, personality science, and LLM research:
+
+**Axis 1 — Social Value Orientation (SVO)**  
+The self-vs.-other tradeoff. Closed vocabulary: Altruist → Prosocial → Individualist → Competitive. Validated in: behavioural economics (SVO slider task), multi-agent RL (arXiv:2603.13890), and LLMs directly (arXiv:2605.14034, 2502.12504). Observable from allocation, cooperation, and negotiation decisions. The strongest empirically-grounded disposition axis available.
+
+**Axis 2 — Conscientiousness / Rule-following**  
+The constraint-vs.-autonomy tradeoff. Maps to Big Five Conscientiousness + inverse Openness. Three-value vocabulary: rigid → flexible → autonomous. Predictive of cooperation and consistency in LLMs. Steerable via representation engineering (arXiv:2503.12722 — α=±3.5 steer without fluency degradation). Observable from rule adherence, planning sophistication, recovery from ambiguity.
+
+**Axis 3 — Risk Appetite** (emerging, not yet formalised)  
+Appears in RL exploiter roles (AlphaStar: main vs. exploiter), behavioural finance, and uncertainty tolerance research. Three-value vocabulary: conservative → balanced → aggressive. Practically important for routing but no standard measurement framework yet.
+
+### Why D&D alignment is dropped
+
+The law–chaos × good–evil axes are intuitively appealing but:
+- No peer-reviewed empirical validation for AI agents
+- Good–evil ≈ SVO (altruist–competitive) — conceptual duplication
+- Law–chaos ≈ Conscientiousness + inverse Openness — conceptual duplication
+- No observable measurement operationalisation
+
+SVO + Conscientiousness cover the same space with actual empirical grounding.
+
+### The key architectural finding — consistency is weak
+
+**Agents exhibit disposition as response to context, not as stable trait.** Questionnaire-based measurement (psychometric) diverges from behavioural measurement across contexts. Self-declared SVO does not reliably predict actual allocation behaviour in novel contexts (arXiv:2602.01063, 2604.28048).
+
+This is the empirical argument for the attestation layer. An `AgentDescriptor` with self-declared `socialOrient: prosocial` is a claim, not a fact. Peer attestation over time — verdicts on actual cooperation decisions — is the only way to validate or challenge it. casehub-ledger's attestation machinery is the right tool; no other framework has it.
+
+**The personality subnetworks finding** (arXiv:2602.07164) adds nuance: LLMs already contain personality-like latent structures. Disposition isn't entirely declared — it's emergent and detectable from behaviour. Attestors observe actual decisions; the declared `socialOrient` is a starting prior that evidence updates.
+
+### Key references
+
+- [Nature MI 2025](https://www.nature.com/articles/s42256-025-01115-6) — psychometric framework for LLM personality evaluation
+- [arXiv:2603.13890](https://arxiv.org/abs/2603.13890) — Beyond Self-Interest: SVO in multi-agent LLMs
+- [arXiv:2605.14034](https://arxiv.org/abs/2605.14034) — From Descriptive to Prescriptive: SVO alignment
+- [arXiv:2503.12722](https://arxiv.org/abs/2503.12722) — Conscientiousness steering via representation engineering
+- [arXiv:2602.01063](https://arxiv.org/abs/2602.01063) — Personality expression across contexts (consistency is weak)
+- [arXiv:2602.07164](https://arxiv.org/abs/2602.07164) — Personality subnetworks in LLMs
+- [arXiv:2502.12504](https://arxiv.org/abs/2502.12504) — Simulating prosocial behaviour in multi-agent LLMs
+
+---
+
 ## Areas to Keep Digging
 
 The core research question is: **how do you describe an individual LLM agent's identity, characteristics, and capabilities so it can be discovered and its claims validated by trust evidence?** AgentO is out of scope for this — it describes system topology, not individual agents.
 
 **Per-agent description — the actual problem:**
 - [x] LDP paper (arXiv:2603.08852) — done. Schema documented above. Key gap: `reasoning_profile` is one-dimensional freeform; `quality_hint` is designer-assigned not evidence-backed.
+- [x] Disposition thread — done. SVO + Conscientiousness replace D&D axes. Consistency weakness validated empirically — attestation layer is essential not optional.
 - [ ] A2A Agent Card spec in detail — what exactly goes in a skill object; can it be extended without breaking compatibility?
 - [ ] A2A Discussion #741 — registry/federation proposals; where does a casehub registry plug in?
 - [ ] OIDC-A proposal — delegation chain model; how does it interact with `delegation` dimension and multi-agent trust chains?
