@@ -31,3 +31,4 @@
 | [2026-04-22-mdp11-trust-without-memory.md](2026-04-22-mdp11-trust-without-memory.md) | 2026-04-22 | LLM agent identity model — why versioned persona names, the clean break over inheritance, and the consumer-facing doc gap |
 | [2026-04-22-mdp12-trace-id-entity-listener-gap.md](2026-04-22-mdp12-trace-id-entity-listener-gap.md) | 2026-04-22 | correlationId renamed to traceId, OTel auto-wiring via CDI entity listener, and the integration test that should have been written first |
 | [2026-05-22-mdp02-the-silent-rule.md](2026-05-22-mdp02-the-silent-rule.md) | 2026-05-22 | ArchUnit parity enforcement — the vacuous pass gotcha and why convention-only rules fail silently |
+| [2026-05-22-mdp03-giving-agents-a-form.md](2026-05-22-mdp03-giving-agents-a-form.md) | 2026-05-22 | Cross-domain research finds nobody has structured agent description — LDP, MAST, SVO, the Maven collision that killed Archetype, and the birth of casehub-eidos |
