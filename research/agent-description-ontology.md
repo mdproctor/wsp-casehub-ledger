@@ -422,12 +422,90 @@ Mapping path: `AgentDescriptor` → AgentO OWL → JSON-LD serialisation → sch
 
 ---
 
+## LDP Analysis — Most Directly Relevant Prior Work
+
+**LDP (LLM Delegate Protocol, arXiv:2603.08852, March 2026)** is the closest existing work to what we're designing. Full schema documented here for reference.
+
+### Delegate Identity Card — full schema (Appendix B)
+
+**Core identity:**
+| Field | Type | Purpose |
+|-------|------|---------|
+| `delegate_id` | string | Unique identifier |
+| `principal_id` | string | Owning organisation |
+| `model_family` | string | Model lineage (e.g. "qwen") |
+| `model_name` | string | Specific model |
+| `model_version` | string | Version tag |
+| `runtime_version` | string | Inference runtime |
+| `weights_fingerprint` | string | Weight integrity hash |
+| `endpoint_address` | string | Network location |
+
+**Trust / security:**
+| Field | Type | Purpose |
+|-------|------|---------|
+| `trust_domain` | string | Security boundary label |
+| `public_key` | string | Cryptographic identity |
+| `jurisdiction` | string | Regulatory scope |
+| `data_handling_policy` | string | Data governance rules |
+
+**Capabilities** (per-capability object array):
+| Field | Type | Purpose |
+|-------|------|---------|
+| `name` | string | Skill label |
+| `quality_hint` | float 0–1 | Continuous quality score |
+| `latency_hint_ms_p50` | integer ms | Median latency estimate |
+| `cost_hint` | low/medium/high | Cost tier |
+| `context_window` | integer | Max token context |
+| `modalities_supported` | string[] | e.g. ["text"] |
+| `languages_supported` | string[] | e.g. ["en", "zh"] |
+
+**Behavioural:**
+| Field | Type | Purpose |
+|-------|------|---------|
+| `reasoning_profile` | string | Freeform style — "deep-analytical", "fast-practical" |
+| `cost_profile` | low/medium/high | Overall cost tier |
+
+**Provenance on every task result:**
+```json
+{
+  "produced_by": "delegate:qwen3-8b",
+  "model_version": "qwen3-8b-2026.01",
+  "confidence": {"score": 0.84, "method": "self-report"},
+  "verification": {"performed": true, "status": "passed"}
+}
+```
+
+### Key empirical findings
+
+- Identity-aware routing: ~12× lower latency on easy tasks (routes cheap model, not expensive one)
+- Semantic frame payload: 37% token reduction, no quality loss
+- **Critical:** noisy provenance (inflated confidence, false verification) "degrades quality *below* the no-provenance baseline" — self-declared claims without verification are actively harmful
+
+### Where LDP lands relative to our design
+
+| LDP concept | casehub equivalent | Verdict |
+|-------------|-------------------|---------|
+| `weights_fingerprint` | `agentConfigHash` in `ProvenanceSupplement` | Already built — convergent design |
+| `quality_hint` per capability | `ActorTrustScore` per `CapabilityTag` | casehub's version is evidence-backed; LDP's is designer-assigned |
+| `trust_domain` | Tenant/deployment scoping | Not yet modelled in `AgentDescriptor` |
+| `jurisdiction` + `data_handling_policy` | Not in casehub yet | New dimension worth adding |
+| `latency_hint_ms_p50` | Not in casehub | New operational dimension |
+| `cost_profile` | Not in casehub | New routing dimension |
+| `reasoning_profile` (freeform string) | Our two-axis disposition model | LDP's is one-dimensional and freeform; structured axes are stronger |
+| `verification.performed/status` | Attestation verdict (SOUND/FLAGGED/ENDORSED/CHALLENGED) | casehub's attestation model is richer |
+
+**The noisy provenance finding is the empirical case for casehub's architecture.** LDP shows that unverified self-declared hints make things *worse* than no metadata at all. The fix is exactly what casehub-ledger provides: peer attestation replacing designer-assigned hints.
+
+**`reasoning_profile` is LDP's stab at disposition** — one dimension, freeform string. Our two-axis model (orderPref × otherWeight) is more principled and queryable.
+
+---
+
 ## Areas to Keep Digging
 
 The core research question is: **how do you describe an individual LLM agent's identity, characteristics, and capabilities so it can be discovered and its claims validated by trust evidence?** AgentO is out of scope for this — it describes system topology, not individual agents.
 
 **Per-agent description — the actual problem:**
-- [ ] LDP paper (arXiv:2603.08852) in full — the most directly relevant work; adds model identity, reasoning profile, quality hints as first-class fields on a per-agent description. Map their fields to our proposed dimensions.
+- [x] LDP paper (arXiv:2603.08852) — done. Schema documented above. Key gap: `reasoning_profile` is one-dimensional freeform; `quality_hint` is designer-assigned not evidence-backed.
 - [ ] A2A Agent Card spec in detail — what exactly goes in a skill object; can it be extended without breaking compatibility?
 - [ ] A2A Discussion #741 — registry/federation proposals; where does a casehub registry plug in?
 - [ ] OIDC-A proposal — delegation chain model; how does it interact with `delegation` dimension and multi-agent trust chains?
