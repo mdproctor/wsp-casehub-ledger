@@ -603,6 +603,88 @@ This is the empirical argument for the attestation layer. An `AgentDescriptor` w
 
 ---
 
+## Generative Direction — Descriptor as CLAUDE.md Generator
+
+This emerged from the discovery research but is a distinct direction worth capturing separately.
+
+### The insight
+
+The `AgentDescriptor` is not only a discovery artifact — it is a **generator**. Given a Case Goal and a descriptor configuration, you can render a CLAUDE.md (or any system prompt) that embeds the agent's role, disposition, capabilities, and specific objective in natural language. The ontology becomes a template engine.
+
+### The generation loop
+
+```
+CaseDefinition.Goal  ──┐
+AgentDescriptor       ──┼──▶  render CLAUDE.md  ──▶  run agent  ──▶  outcomes
+  (slot, socialOrient, │                                                  │
+   ruleFollowing,      │                                                  ▼
+   capabilities, ...)  │                                          attestations
+                       │                                                  │
+                       └──────────────── update trust scores / knowledge graph
+```
+
+1. **Goal** comes from the Case (`CaseDefinition.Goal`) — already a formal expression in casehub-engine. You read it; you don't invent it.
+2. **Descriptor** defines how the goal is pursued — role slot, SVO, conscientiousness, capability set.
+3. **Rendered CLAUDE.md** is the natural language materialisation: role + disposition + goal + capability context, templated into prose.
+4. **Outcomes** feed back via attestations → trust scores per capability per disposition configuration.
+
+### Concrete example — same goal, two descriptors
+
+**Goal:** "Review this PR. Accept only if code quality and test coverage meet the team standard."
+
+**Descriptor A:**
+```yaml
+slot: critic
+socialOrient: prosocial
+ruleFollowing: flexible
+capabilities: [code-review]
+context: "reviewer of intern submissions"
+```
+**Renders as:**
+> "Your goal is to review this PR and accept only if code quality and test coverage meet the team standard. You are a code reviewer working with interns. Be skeptical but kind — your role is coaching, not gatekeeping. Adapt your feedback to the author's level."
+
+**Descriptor B:**
+```yaml
+slot: critic
+socialOrient: competitive
+ruleFollowing: rigid
+capabilities: [code-review]
+context: "gatekeeper for production branch"
+```
+**Renders as:**
+> "Your goal is to review this PR and accept only if code quality and test coverage meet the team standard. You are a ferocious gatekeeper. Standards are non-negotiable. Reject anything that wastes the team's time. Do not soften feedback."
+
+Same goal. Same capability. Radically different behaviour from two structured dimension choices.
+
+### Why this matters
+
+**Systematic experimentation.** Hold the goal constant. Vary the disposition. Observe what changes. This is structured prompt engineering with a controlled variable — something no current framework supports because they lack a formal descriptor schema.
+
+**Institutional memory.** Once you have enough `(descriptor, task-type, outcome, attestation)` tuples in the knowledge graph, you can query it: *"For PR reviews on intern code, which SVO configuration produced the fewest escalations and the best learning outcomes?"* The graph becomes organisational memory for which agent configurations work for which task types.
+
+**Closes the feedback loop the research is missing.** LDP has the descriptor side. MAST has the failure evidence. Neither connects descriptors to outcomes through an attestation layer. That's the unique position.
+
+### What needs building
+
+| Component | Status | Notes |
+|-----------|--------|-------|
+| `AgentDescriptor` schema | Design phase | Core platform type |
+| `CaseDefinition.Goal` → descriptor injection | Exists in engine | Read the goal; inject it |
+| CLAUDE.md template engine | Not started | Lightweight string templating; no heavy deps |
+| Descriptor → rendered prompt mapping | Not started | Each dimension has a prose rendering rule |
+| Outcome → attestation pipeline | Exists (casehub-ledger) | Already built |
+| Knowledge graph of (descriptor, task, outcome) | Not started | This is the long-game store |
+
+### Open questions
+
+- **What is the rendering unit?** Full CLAUDE.md? Just the system prompt header? A structured preamble? Probably a structured section that agents paste into their own CLAUDE.md rather than a full file replacement.
+- **Who writes the template?** The deployer? The platform? A skill? Probably a platform-provided default template with deployer overrides.
+- **How does the rendering vary by context?** The same SVO value should render differently for an intern reviewer vs. a production gatekeeper — the `context` field shapes the prose.
+- **How do you measure outcome quality?** Attestation verdicts are one signal. Quantitative metrics (PR merge rate, escalation rate, review cycle time) are another. Both should feed the knowledge graph.
+- **Iteration cadence?** How many runs before you have enough signal to prefer one descriptor configuration over another for a given task type?
+
+---
+
 ## Areas to Keep Digging
 
 The core research question is: **how do you describe an individual LLM agent's identity, characteristics, and capabilities so it can be discovered and its claims validated by trust evidence?** AgentO is out of scope for this — it describes system topology, not individual agents.
