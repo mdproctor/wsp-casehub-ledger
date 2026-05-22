@@ -1,6 +1,6 @@
 # Agent Description Ontology — Research Notes
 
-**Status:** Supporting research — see [`agentx.md`](agentx.md) for the synthesised spec  
+**Status:** Supporting research — see [`eidos.md`](eidos.md) for the synthesised spec  
 **Started:** 2026-05-22  
 **Destination:** `casehub-parent/docs/research/` when mature  
 
@@ -733,7 +733,7 @@ The agent trust/reputation problem is attracting proprietary solutions, not a co
 
 **None of these are coordinating on a shared standard.** They are all responding to the same Discussion #1631 thread but building separate proprietary solutions. Classic early-market fragmentation — same pattern as pre-HTTP networking protocols, pre-OAuth identity, pre-OpenAPI API description.
 
-**What this means for AgentX:**
+**What this means for Eidos:**
 
 1. **The problem is unambiguously real.** People don't spend engineering effort on theoretical problems. The fragmentation confirms the gap.
 

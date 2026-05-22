@@ -1,16 +1,16 @@
-# AgentX — Specification
+# Eidos — Specification
 
 **Status:** Pre-implementation spec  
 **Started:** 2026-05-22  
-**Working name:** AgentX (permanent name TBD)  
+**Name: Eidos)  
 **Strategy:** Build first. Engage A2A / open standard community when casehub is ready.  
 **Research backing:** `agent-description-ontology.md`, `casehub-platform-vocabulary-validation.md`
 
 ---
 
-## What Is AgentX?
+## What Is Eidos?
 
-AgentX is a new casehub platform repo that gives LLM agents a structured, discoverable, and generative identity.
+Eidos is a new casehub platform repo that gives LLM agents a structured, discoverable, and generative identity.
 
 Three things it enables:
 
@@ -24,7 +24,7 @@ Three things it enables:
 
 ## Why a New Repo?
 
-AgentX is **higher-order** than the ledger. It depends on casehub-ledger's attestation and trust infrastructure as its evidence layer. The ledger should never depend on it.
+Eidos is **higher-order** than the ledger. It depends on casehub-ledger's attestation and trust infrastructure as its evidence layer. The ledger should never depend on it.
 
 `casehub-ledger` is a narrow, stable foundation library — audit, tamper evidence, attestation, trust scores. Its consumers (`casehub-work`, `casehub-qhorus`, `casehub-engine`) depend on it. It stays focused.
 
@@ -43,8 +43,8 @@ casehub-ledger             (unchanged)
   ├── LedgerEntry, attestation, trust scores, signing, key rotation
   └── agentConfigHash already in ProvenanceSupplement (= weightsFingerprint)
 
-agentx/                    (new repo)
-  ├── api/                 — AgentX-specific types and SPIs (if any beyond platform-api)
+eidos/                    (new repo)
+  ├── api/                 — Eidos-specific types and SPIs (if any beyond platform-api)
   ├── runtime/             — JPA implementations, ClaudeMarkdownRenderer, registry store
   │   ├── JpaAgentRegistry
   │   ├── DefaultCapabilityHealth
@@ -61,9 +61,9 @@ agentx/                    (new repo)
 
 | Module | artifactId |
 |--------|-----------|
-| Runtime | `casehub-agentx` |
-| Deployment | `casehub-agentx-deployment` |
-| Vocabulary (optional) | `casehub-agentx-vocab` |
+| Runtime | `casehub-eidos` |
+| Deployment | `casehub-eidos-deployment` |
+| Vocabulary (optional) | `casehub-eidos-vocab` |
 | Types | added to `casehub-platform-api` (existing) |
 
 ---
@@ -100,7 +100,7 @@ record AgentDescriptor(
 )
 ```
 
-The platform provides no hardcoded constants for slot. Domain apps define their own vocabulary and register it via `VocabularyRegistry`. Optional well-known values are published in `casehub-agentx-vocab` for apps that want a starting point.
+The platform provides no hardcoded constants for slot. Domain apps define their own vocabulary and register it via `VocabularyRegistry`. Optional well-known values are published in `casehub-eidos-vocab` for apps that want a starting point.
 
 **Research backing:** MAST FM-1.2 (disobey role specification) cascades into 36.9% inter-agent misalignment. Structured slot declaration — in any vocabulary — is failure prevention, not routing convenience.
 
@@ -232,7 +232,7 @@ disposition:
 **Override case — mix vocabularies:**
 ```yaml
 domainVocabulary: "https://devtown.io/vocab/v1"
-dispositionVocabulary: "https://agentx.io/vocab/svo/v1"   # use SVO for disposition
+dispositionVocabulary: "https://eidos.io/vocab/svo/v1"   # use SVO for disposition
 slot: "planner"
 disposition:
   socialOrient: "prosocial"    # SVO vocabulary value
@@ -248,7 +248,7 @@ slot: "my-custom-slot"   # no vocabulary; exact match only in discovery
 
 If DevTown's `"planner"` declares `exactMatch: "https://casehub.io/vocab/slots/v1#orchestrator"`, then querying for slot = "orchestrator" in the registry can surface DevTown agents with slot = "planner". The registry resolves the equivalence; the querying agent doesn't need to know DevTown's vocabulary.
 
-### The optional `casehub-agentx-vocab` module
+### The optional `casehub-eidos-vocab` module
 
 Provides well-known starting-point vocabularies. **Not required.** Apps that want their own vocabulary don't use this. Apps that want a shared baseline can depend on it.
 
@@ -265,7 +265,7 @@ The `AgentDescriptor` is the **static layer** — what an agent IS and CAN DO. D
 
 No existing framework has formalised this for LLM agents. Robotics acknowledges the gap (Dussard 2023). Microservices have Kubernetes probes but binary. MAST has no failure mode for "agent declared capable but not currently operable."
 
-AgentX introduces `CapabilityHealth` — the **dynamic layer**, probed at dispatch time, TTL-limited, graduated:
+Eidos introduces `CapabilityHealth` — the **dynamic layer**, probed at dispatch time, TTL-limited, graduated:
 
 ```
 READY | DEGRADED(reason) | UNAVAILABLE | EPISTEMICALLY_WEAK
@@ -315,7 +315,7 @@ Default implementation checks context utilisation, rate limit headroom, and `epi
 
 ### New MAST failure class
 
-MAST taxonomy has no failure mode for capability operability failure. AgentX logging of `CapabilityHealth.probe()` results creates the observability to distinguish:
+MAST taxonomy has no failure mode for capability operability failure. Eidos logging of `CapabilityHealth.probe()` results creates the observability to distinguish:
 - **Genuine misalignment** (FM-2.2 / FM-2.3): agent received appropriate task, miscoordinated
 - **Operability failure** (new): agent was dispatched despite degraded state; preventable at routing time
 
@@ -419,11 +419,11 @@ A2A spec v1.0 explicitly states clients MUST ignore unrecognised fields.
 {
   "capabilities": {
     "extensions": [{
-      "uri": "https://agentx.io/extensions/v1/agent-dimensions",
+      "uri": "https://eidos.io/extensions/v1/agent-dimensions",
       "required": false,
       "params": {
         "slotVocabulary": "https://devtown.io/vocab/slots/v1",
-        "dispositionVocabulary": "https://agentx.io/vocab/svo/v1"
+        "dispositionVocabulary": "https://eidos.io/vocab/svo/v1"
       }
     }]
   }
@@ -434,10 +434,10 @@ A2A spec v1.0 explicitly states clients MUST ignore unrecognised fields.
 ```json
 {
   "metadata": {
-    "agentx_slot": "planner",
-    "agentx_slot_vocabulary": "https://devtown.io/vocab/slots/v1",
-    "agentx_disposition_social_orient": "prosocial",
-    "agentx_epistemic_domains": {"java": 0.95, "rust": 0.42}
+    "eidos_slot": "planner",
+    "eidos_slot_vocabulary": "https://devtown.io/vocab/slots/v1",
+    "eidos_disposition_social_orient": "prosocial",
+    "eidos_epistemic_domains": {"java": 0.95, "rust": 0.42}
   }
 }
 ```
@@ -446,13 +446,13 @@ A2A spec v1.0 explicitly states clients MUST ignore unrecognised fields.
 
 **JWS signatures cover metadata** — slot and disposition values are cryptographically bound by default.
 
-**Contribution target:** A2A Discussion #1631 — engage when AgentX is built. Bring SVO vocabulary, slot taxonomy, and the connection between self-declared dimensions and attestation-backed trust scores.
+**Contribution target:** A2A Discussion #1631 — engage when Eidos is built. Bring SVO vocabulary, slot taxonomy, and the connection between self-declared dimensions and attestation-backed trust scores.
 
 ### casehub-ledger as the evidence layer
 
-AgentX self-declared dimensions are priors. The evidence layer that validates or challenges them is already built in casehub-ledger:
+Eidos self-declared dimensions are priors. The evidence layer that validates or challenges them is already built in casehub-ledger:
 
-| AgentX self-declaration | casehub-ledger evidence |
+| Eidos self-declaration | casehub-ledger evidence |
 |------------------------|------------------------|
 | `qualityHint: 0.85` per capability | `ActorTrustScore` per `CapabilityTag` (Bayesian Beta, attestation-derived) |
 | `weightsFingerprint` | `agentConfigHash` in `ProvenanceSupplement` (already exists) |
@@ -461,11 +461,11 @@ AgentX self-declared dimensions are priors. The evidence layer that validates or
 
 ---
 
-## What AgentX Is NOT
+## What Eidos Is NOT
 
 - **Not a communication protocol** — that's A2A / MCP / Qhorus
 - **Not an orchestration engine** — that's casehub-engine
-- **Not an audit log** — that's casehub-ledger (AgentX depends on it)
+- **Not an audit log** — that's casehub-ledger (Eidos depends on it)
 - **Not a trust scoring system** — that's casehub-ledger's `TrustScoreComputer` / `EigenTrustComputer`
 - **Not a replacement for CLAUDE.md** — `ClaudeMarkdownRenderer` generates a *section* for inclusion alongside repo-specific content
 - **Not a vocabulary authority** — platform defines structure; domains define vocabulary values
@@ -476,13 +476,13 @@ AgentX self-declared dimensions are priors. The evidence layer that validates or
 
 | Decision | Choice | Rationale |
 |----------|--------|-----------|
-| New repo vs. evolve ledger | New repo | Ledger is narrow, stable, foundation; AgentX is higher-order and depends on it |
+| New repo vs. evolve ledger | New repo | Ledger is narrow, stable, foundation; Eidos is higher-order and depends on it |
 | Type location | `casehub-platform-api` | AgentDescriptor et al. are cross-cutting; engine, qhorus, devtown all reference them |
 | Slot type | Open `String`, no platform constants | Domain apps define their own vocabulary; platform must not constrain |
 | Disposition field types | Open `String`, no platform constants | Same — "ruthless", "kind", "methodical" are domain-valid values |
 | `delegation` type | `boolean` | Binary, platform-semantic — orchestration engine needs this regardless of domain |
 | Vocabulary model | Pluggable `VocabularyRegistry` SPI; domain profiles with per-field overrides | Fluid, evolvable; `domainVocabulary` default + optional `slotVocabulary` / `dispositionVocabulary` overrides |
-| Optional vocab module | `casehub-agentx-vocab` | Recommended starting vocabulary; not required; SVO, Conscientiousness, CasehubSlot |
+| Optional vocab module | `casehub-eidos-vocab` | Recommended starting vocabulary; not required; SVO, Conscientiousness, CasehubSlot |
 | Disposition model basis | SVO + Conscientiousness + Risk appetite | Empirically grounded; replaces D&D which has no academic validation for AI agents |
 | Rendering strategy | Hybrid: Qute template + LLM prose | Template for deterministic structure; LLM for natural language disposition section only |
 | Rendering timing | Registration time, cached | Determinism, cost, auditability — stored artifact, regenerated on descriptor change |
@@ -498,7 +498,7 @@ Target: one week to get the foundations in place. Four phases, iterating.
 
 ### Phase 1 — The Descriptor (tonight → day 2–3)
 
-Get the core type into `casehub-platform-api` and a working registry in AgentX.
+Get the core type into `casehub-platform-api` and a working registry in Eidos.
 
 - `AgentDescriptor` record — all four layers (identity, slot, capabilities, disposition)
 - `AgentCapability` record — name, qualityHint, latencyHint, costHint, inputTypes, outputTypes, tags, epistemicDomains
@@ -506,9 +506,9 @@ Get the core type into `casehub-platform-api` and a working registry in AgentX.
 - `Vocabulary` and `VocabularyTerm` types
 - `VocabularyRegistry` SPI + in-memory default implementation
 - `AgentRegistry` SPI — register, findById, findBySlot, findByCapability
-- JPA `AgentDescriptorEntity` in AgentX runtime
+- JPA `AgentDescriptorEntity` in Eidos runtime
 - `JpaAgentRegistry` implementation
-- `casehub-agentx-vocab` module with SVO, Conscientiousness, CasehubSlot vocabularies
+- `casehub-eidos-vocab` module with SVO, Conscientiousness, CasehubSlot vocabularies
 - A2A Agent Card serialisation (extensions + metadata, vocabulary URIs)
 - Basic Flyway migration for `agent_descriptor` table
 
@@ -536,7 +536,7 @@ Turn descriptors into runnable agent instructions.
 - LLM prose call for disposition section — lightweight call at registration time
 - Goal injection from `CaseDefinition.Goal`
 - Rendered prompt cache keyed by `(descriptorHash + contextHash)`
-- `RenderedPrompt` storage in AgentX (text + metadata + rendering timestamp)
+- `RenderedPrompt` storage in Eidos (text + metadata + rendering timestamp)
 - `RenderFormat` enum: `CLAUDE_MD`, `OPENAI_SYSTEM`, `A2A_CARD`, `GEMINI`
 
 *Deliverable: given a case goal and a descriptor, get a CLAUDE.md section back.*
@@ -557,8 +557,8 @@ Close the feedback loop.
 ## Open Questions
 
 **Architecture:**
-- Permanent name for AgentX?
-- Does `ClaudeMarkdownRenderer` live in `agentx/runtime` or a separate `casehub-agentx-claude` opt-in module?
+- Name is Eidos — decided.
+- Does `ClaudeMarkdownRenderer` live in `eidos/runtime` or a separate `casehub-eidos-claude` opt-in module?
 - Which LLM generates the disposition prose? Platform-configured or descriptor-specified?
 
 **Descriptor design:**
@@ -573,7 +573,7 @@ Close the feedback loop.
 
 **Discovery:**
 - Query model: simple field match (Phase 1–2), then embedding similarity for semantic queries (Phase 4+)?
-- How does AgentX registry relate to A2A Agent Card registries at `/.well-known/`? Separate concerns or federated?
+- How does Eidos registry relate to A2A Agent Card registries at `/.well-known/`? Separate concerns or federated?
 
 **Evidence loop:**
 - What outcome signals feed the knowledge graph? Attestation verdicts + quantitative metrics (PR merge rate, cycle time)?
@@ -592,7 +592,7 @@ Close the feedback loop.
 - [x] Disposition thread — SVO replaces D&D; consistency weak; attestation essential; Nature MI 2025
 - [x] Feature vs. capability — two-layer: static descriptor + dynamic CapabilityHealth; epistemicDomains; new MAST failure class
 - [x] A2A extensibility — fully compatible; extensions[] + metadata + extended card; JWS covers metadata; Discussion #1631 is contribution target
-- [ ] A2A Discussion #741 — registry/federation; where AgentX registry plugs in to the A2A ecosystem
+- [ ] A2A Discussion #741 — registry/federation; where Eidos registry plugs in to the A2A ecosystem
 - [ ] OIDC-A delegation chains — trust propagation when agent A delegates to agent B
 - [ ] WoT Thing Description Directory — most mature discovery; SPARQL query model worth understanding for Phase 2+
 - [ ] Risk appetite formalisation — any emerging vocabulary from behavioural economics / RL?
