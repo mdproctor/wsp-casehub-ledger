@@ -500,6 +500,56 @@ Mapping path: `AgentDescriptor` → AgentO OWL → JSON-LD serialisation → sch
 
 ---
 
+## MAST Analysis — Empirical Failure Evidence
+
+**MAST: "Why Do Multi-Agent LLM Systems Fail?"**  
+arXiv:2503.13657 · NeurIPS 2025 Spotlight · [GitHub](https://github.com/multi-agent-systems-failure-taxonomy/MAST)  
+1,642 annotated traces across AutoGen, CrewAI, LangGraph. 14 failure modes, 3 categories.
+
+Overall failure rate: **41–86.7%** across 7 production MAS frameworks.
+
+### The 14 failure modes
+
+**FC1 — System Design Issues**  
+FM-1.2: Disobey role specification → explicitly cascades into FC2 misalignment
+
+**FC2 — Inter-Agent Misalignment (36.9% of all failures)**
+
+| Mode | Rate | What it is |
+|------|------|-----------|
+| FM-2.6 | 13.2% | Reasoning-action mismatch — agent states it will do X, does Y |
+| FM-2.3 | 7.4% | Task derailment — drifts from original objective |
+| FM-2.2 | 6.8% | Fails to ask for clarification — proceeds on wrong assumptions |
+| FM-2.1 | 2.2% | Conversation reset — loses prior context |
+| FM-2.5 | 1.9% | Ignores other agents' input |
+| FM-2.4 | 0.85% | Information withholding |
+
+**FC3 — Task Verification & Termination (21.3%)**
+
+### What MAST means for agent description
+
+**FM-2.6 (13.2%) is the key finding.** Reasoning-action mismatch — an agent whose declared `reasoning_profile` doesn't match actual behaviour. This is precisely what peer attestation catches over time: FLAGGED verdicts accumulate when an agent consistently says one thing and does another. The trust score for that capability degrades accordingly. What LDP would route around by choosing a different `reasoning_profile` label, casehub-ledger makes observable and persistent.
+
+**FM-1.2 → FC2 cascade is the empirical argument for a formal role slot.** Poorly defined roles feed misalignment downstream. Freeform system prompts as role definitions are insufficient — the data shows it. A structured `slot` field (orchestrator / executor / critic / monitor) is failure prevention, not just routing convenience.
+
+**"Deference to Expertise" (their HRO framing).** The authors frame good MAS as organisational design — FM-2.2 (fails to ask for clarification) undermines *deference to expertise*, the HRO principle of knowing when to yield to others' knowledge. This is exactly what capability-aware routing does: an agent that knows its peer's trust score per capability knows when to defer rather than proceed on wrong assumptions.
+
+### Their recommended fixes and casehub's structural answers
+
+| MAST recommendation | casehub equivalent |
+|--------------------|-------------------|
+| Probabilistic confidence thresholds | `TrustGateService.meetsThreshold()` |
+| Modular, single-responsibility agents | Functional role slot in `AgentDescriptor` |
+| Standardised communication protocols | A2A Agent Cards + Qhorus speech act taxonomy |
+| Cross-verification between agents | Peer attestation (SOUND/FLAGGED/ENDORSED/CHALLENGED) |
+| Enforce hierarchy / role authority | `AgentDescriptor.slot` + delegation flag |
+
+**What MAST doesn't have:** no formal capability declaration, no disposition model, no trust evidence layer connecting self-description to demonstrated behaviour. Their fixes are prompt-based and reactive. The structural solution is what we're building.
+
+**Dataset:** MAST-Data (1,642 traces) is publicly available. Potential validation resource if we want to measure whether typed role/disposition descriptions reduce FC2 failure rates.
+
+---
+
 ## Areas to Keep Digging
 
 The core research question is: **how do you describe an individual LLM agent's identity, characteristics, and capabilities so it can be discovered and its claims validated by trust evidence?** AgentO is out of scope for this — it describes system topology, not individual agents.
