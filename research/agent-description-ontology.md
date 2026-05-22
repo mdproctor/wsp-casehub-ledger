@@ -248,6 +248,57 @@ These are complementary. An `AgentDescriptor` in casehub could serialise as an A
 
 ---
 
+## AgentO Taxonomy vs. casehub Terminology
+
+A deliberate comparison before any vocabulary decisions. casehub's terminology has been carefully chosen — especially the work/task/goal distinction — and any adoption from AgentO must not reintroduce collisions that were explicitly designed away.
+
+### Term-by-term comparison
+
+| AgentO concept | casehub equivalent | Verdict |
+|---|---|---|
+| `Task` | `WorkItem` (casehub-work) / `PlanItem` (casehub-engine) / `humanTask` (YAML binding) | **COLLISION — do not import** |
+| `WorkflowPattern` | `CaseDefinition` (CNCF Serverless Workflow layer) | **Overlap — different level, watch for drift** |
+| `WorkflowStep` | `PlanItem` at execution stage | **Overlap — different level, watch for drift** |
+| `Goal` | Not formally defined in casehub | Clean adoption |
+| `Objective` | Not formally defined in casehub | Clean adoption |
+| `Team` | Not in casehub | Clean adoption |
+| `Capability` | `CapabilityTag` (trust scoping in casehub-ledger) | Different levels — coexist safely |
+| `Constraint` | `SlaBreachPolicy`, `ExclusionPolicy` (policy/decision objects) | Different semantic level — do not conflate |
+| `Memory` / `KnowledgeBase` | Not in casehub | Clean adoption |
+| `Environment` | Not in casehub | Clean adoption |
+| `Resource` | Not in casehub | Clean adoption |
+| `Tool` | MCP tools (casehub-qhorus) | Weak overlap, different scope |
+| `LanguageModel` | Implicit in `actorId` model-family | No conflict |
+| `Agent` | `actorId` (casehub-ledger), `CurrentPrincipal` (platform) | Different levels — can coexist |
+
+### The `Task` collision is load-bearing
+
+casehub-work explicitly does **not** call WorkItems "Tasks" — the doc notes it is *"deliberately NOT called Task"* because CNCF Serverless Workflow and casehub-engine both use `Task` with distinct, conflicting semantics. Importing AgentO's `Task` vocabulary into any casehub `AgentDescriptor` or platform type would reintroduce exactly the collision that was designed away. **Do not use `Task` in any casehub agent vocabulary.**
+
+### Where casehub is ahead of AgentO — the normative layer
+
+AgentO's normative model: `Constraint` as a subclass of `KnowledgeBase` — stored rules that restrict or guide agent behaviour. This is a knowledge-representation concept, not a deontic model.
+
+casehub-qhorus has a full 4-layer normative accountability framework grounded in Austin/Searle speech act theory:
+
+1. **Illocutionary** — what was said: 9 speech-act types (Directive, Commissive, Assertive, Declarative, Expressive, etc.)
+2. **Commitment** — what was obligated: `Commitment` entity with 7-state lifecycle (OPEN → FULFILLED / FAILED / EXPIRED / ...)
+3. **Temporal** — when obligations become stale: Watchdog, deadline enforcement
+4. **Enforcement** — casehub-engine orchestration reacts to commitment outcomes via CDI events
+
+The 3-channel normative layout (`work` / `observe` / `oversight`) structures agent-to-agent and agent-to-human interactions. This is a genuine deontic model — obligations, commitments, temporal validity — that AgentO does not have in any form.
+
+**This is a contribution opportunity, not an import.** casehub's normative model is what we'd give to AgentO, not take from it.
+
+### Vocabulary rules for `AgentDescriptor`
+
+- **Use from AgentO:** `Goal`, `Objective`, `Team`, `Capability`, `Memory`, `Environment`, `Resource` — no conflicts
+- **Do not use:** `Task` — collision with WorkItem/PlanItem distinction
+- **Use carefully:** `WorkflowPattern`, `WorkflowStep` — keep scoped to agent-level description; do not let them bleed into casehub-engine's CaseDefinition/PlanItem layer
+- **Extend:** Add functional role slot, disposition dimensions, trust/attestation model — not in AgentO
+
+---
+
 ## Implementation Philosophy: Ontologies as Design Tools, Not Runtime Dependencies
 
 **The heavy semantic web stack (Jena, RDF4J, OWL API, JADE, Jason) does not belong in casehub.**
