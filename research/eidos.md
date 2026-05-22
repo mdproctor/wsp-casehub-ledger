@@ -29,42 +29,55 @@ Eidos is **higher-order** than the ledger. It depends on casehub-ledger's attest
 `casehub-ledger` is a narrow, stable foundation library — audit, tamper evidence, attestation, trust scores. Its consumers (`casehub-work`, `casehub-qhorus`, `casehub-engine`) depend on it. It stays focused.
 
 ```
-casehub-platform-api       (existing — types added here)
-  ├── AgentDescriptor
-  ├── AgentCapability
-  ├── AgentDisposition
-  ├── Vocabulary
-  ├── VocabularyRegistry   (SPI)
-  ├── AgentRegistry        (SPI)
-  ├── CapabilityHealth     (SPI)
-  └── SystemPromptRenderer (SPI)
+casehub-platform-api       (existing — unchanged)
+  └── ActorType, CurrentPrincipal, Path, PreferenceKey  (pre-existing platform primitives only)
 
 casehub-ledger             (unchanged)
   ├── LedgerEntry, attestation, trust scores, signing, key rotation
   └── agentConfigHash already in ProvenanceSupplement (= weightsFingerprint)
 
-eidos/                    (new repo)
-  ├── api/                 — Eidos-specific types and SPIs (if any beyond platform-api)
-  ├── runtime/             — JPA implementations, ClaudeMarkdownRenderer, registry store
-  │   ├── JpaAgentRegistry
+eidos/                     (new repo — casehubio/eidos)
+  ├── api/                 — casehub-eidos-api: pure Java, no Quarkus, no JPA (Tier 1)
+  │   ├── AgentDescriptor
+  │   ├── AgentCapability
+  │   ├── AgentDisposition
+  │   ├── Vocabulary, VocabularyTerm
+  │   ├── VocabularyRegistry       (SPI)
+  │   ├── AgentRegistry            (SPI — blocking)
+  │   ├── ReactiveAgentRegistry    (SPI — Uni<T> variants)
+  │   ├── CapabilityHealth         (SPI — blocking)
+  │   ├── ReactiveCapabilityHealth (SPI — Uni<T> variants)
+  │   └── SystemPromptRenderer     (SPI)
+  ├── runtime/             — casehub-eidos: JPA, CDI, Quarkus (Tier 3)
+  │   ├── JpaAgentRegistry          (@DefaultBean blocking)
+  │   ├── JpaReactiveAgentRegistry  (@DefaultBean reactive)
   │   ├── DefaultCapabilityHealth
-  │   ├── ClaudeMarkdownRenderer   (@DefaultBean SystemPromptRenderer)
+  │   ├── CdiVocabularyRegistry     (discovers Instance<Vocabulary> CDI beans)
+  │   ├── ClaudeMarkdownRenderer    (@DefaultBean SystemPromptRenderer)
   │   └── A2AAgentCardSerializer
-  ├── deployment/          — Quarkus extension @BuildStep
-  └── vocab/               — optional vocabulary module (not required)
-      ├── SvoVocabulary
+  ├── persistence-memory/  — casehub-eidos-memory: in-memory AgentRegistry (@Alternative @Priority(1))
+  ├── deployment/          — casehub-eidos-deployment: @BuildStep Quarkus processor
+  └── vocab/               — casehub-eidos-vocab: optional CDI-produced well-known vocabularies
+      ├── SvoVocabulary            (@ApplicationScoped CDI bean)
       ├── ConscientiousnessVocabulary
       └── CasehubSlotVocabulary
 ```
 
-**Maven coordinates (tentative):**
+**Why nothing goes in `casehub-platform-api`:** Eidos types are Eidos domain types.
+Repos that need them depend on `casehub-eidos-api` (Tier 1, pure Java). The three-tier
+module structure already solves the lightweight-dependency problem — no need to promote
+domain types to platform-api. See the `platform-api-scope` protocol in the garden.
 
-| Module | artifactId |
-|--------|-----------|
-| Runtime | `casehub-eidos` |
-| Deployment | `casehub-eidos-deployment` |
-| Vocabulary (optional) | `casehub-eidos-vocab` |
-| Types | added to `casehub-platform-api` (existing) |
+**Maven coordinates:**
+
+| Module | artifactId | Folder |
+|--------|-----------|--------|
+| Root parent | `casehub-eidos-parent` | — |
+| SPI + types | `casehub-eidos-api` | `api/` |
+| Runtime | `casehub-eidos` | `runtime/` |
+| In-memory (test/ephemeral) | `casehub-eidos-memory` | `persistence-memory/` |
+| Quarkus deployment | `casehub-eidos-deployment` | `deployment/` |
+| Well-known vocabularies (optional) | `casehub-eidos-vocab` | `vocab/` |
 
 ---
 
@@ -192,7 +205,7 @@ record VocabularyTerm(
 ### VocabularyRegistry SPI
 
 ```java
-// in casehub-platform-api
+// in casehub-eidos-api
 interface VocabularyRegistry {
     void register(Vocabulary vocabulary);
     Optional<Vocabulary> find(String uri);
@@ -291,7 +304,7 @@ If all candidates fail → WorkerProvisioner.provision() with epistemic constrai
 ### `CapabilityHealth` SPI
 
 ```java
-// in casehub-platform-api
+// in casehub-eidos-api
 interface CapabilityHealth {
     CapabilityStatus probe(String agentId, String capabilityTag, ProbeContext context);
 }
@@ -360,7 +373,7 @@ Same goal. Same capability. Radically different behaviour from two structured di
 Format-agnostic from day one. Current target: CLAUDE.md.
 
 ```java
-// in casehub-platform-api
+// in casehub-eidos-api
 interface SystemPromptRenderer {
     RenderedPrompt render(AgentDescriptor descriptor, Goal goal, RenderContext context);
 }
@@ -477,7 +490,7 @@ Eidos self-declared dimensions are priors. The evidence layer that validates or 
 | Decision | Choice | Rationale |
 |----------|--------|-----------|
 | New repo vs. evolve ledger | New repo | Ledger is narrow, stable, foundation; Eidos is higher-order and depends on it |
-| Type location | `casehub-platform-api` | AgentDescriptor et al. are cross-cutting; engine, qhorus, devtown all reference them |
+| Type location | `casehub-eidos-api` (Tier 1) | Platform-api is for platform primitives only; repos needing Eidos types depend on `casehub-eidos-api` directly |
 | Slot type | Open `String`, no platform constants | Domain apps define their own vocabulary; platform must not constrain |
 | Disposition field types | Open `String`, no platform constants | Same — "ruthless", "kind", "methodical" are domain-valid values |
 | `delegation` type | `boolean` | Binary, platform-semantic — orchestration engine needs this regardless of domain |
@@ -498,7 +511,7 @@ Target: one week to get the foundations in place. Four phases, iterating.
 
 ### Phase 1 — The Descriptor (tonight → day 2–3)
 
-Get the core type into `casehub-platform-api` and a working registry in Eidos.
+Get the core types into `casehub-eidos-api` and a working registry in `casehub-eidos` runtime.
 
 - `AgentDescriptor` record — all four layers (identity, slot, capabilities, disposition)
 - `AgentCapability` record — name, qualityHint, latencyHint, costHint, inputTypes, outputTypes, tags, epistemicDomains
@@ -531,7 +544,7 @@ Make the registry useful for routing decisions.
 
 Turn descriptors into runnable agent instructions.
 
-- `SystemPromptRenderer` SPI + `RenderContext` record in `casehub-platform-api`
+- `SystemPromptRenderer` SPI + `RenderContext` record in `casehub-eidos-api`
 - `ClaudeMarkdownRenderer` — `@DefaultBean`, Qute template for structure
 - LLM prose call for disposition section — lightweight call at registration time
 - Goal injection from `CaseDefinition.Goal`
