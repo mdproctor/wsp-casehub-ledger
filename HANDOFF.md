@@ -3,64 +3,48 @@
 
 ## Current State
 
-449 tests, BUILD SUCCESS. Both ledger repos on `main`, history clean.
-casehub-eidos bootstrapped — new repo on casehubio/eidos and mdproctor/eidos,
-workspace on wsp-casehub-eidos. Platform docs updated.
+449 tests, BUILD SUCCESS. Both ledger repos on `main`, casehubio/ledger CI green ✅.
+Binaries published to GitHub Packages. casehub-eidos bootstrapped on casehubio/eidos
+and mdproctor/eidos, workspace on wsp-casehub-eidos.
 
 ## What Landed This Session
 
-**Housekeeping:** garden#1 (ArchUnit note in reactive-service-build-gating protocol)
-and parent#42 (ledger deep-dive + Implementation Protocols table) closed.
-ledger#89 (ActorTypeResolver migration) was already done — closed.
+**Housekeeping:** garden#1, parent#42, ledger#89 closed.
 
-**Research → spec → repo:** Six-domain research sweep produced `research/eidos.md`
-in the ledger workspace (now also in the eidos workspace). Key findings: LDP's
-unverified hints degrade quality below baseline; MAST 36.9% inter-agent
-misalignment; SVO over D&D for disposition; two-layer capability (static descriptor
-+ dynamic CapabilityHealth probe). Named Eidos over Archetype (Maven collision),
-Idos (idOS crypto), Ontos (ontology confusion).
+**Research → spec → repo:** Six-domain research sweep produced `research/eidos.md`.
+Key findings: LDP unverified hints degrade quality; MAST 36.9% inter-agent misalignment;
+SVO over D&D for disposition; two-layer capability (static descriptor + dynamic
+CapabilityHealth probe). Named Eidos over Archetype (Maven collision), Idos (crypto),
+Ontos (ontology confusion).
 
-**Platform protocol:** `platform-api-scope.md` added to garden — casehub-platform-api
-is for primitives that avoid duplication across peer repos, not a shared types bucket.
-PLATFORM.md Step 4 updated. All Eidos types go in `casehub-eidos-api`.
+**Platform protocol:** `platform-api-scope.md` added to garden. PLATFORM.md updated.
 
-**casehub-eidos bootstrapped:** Maven structure (api/runtime/persistence-memory/
-deployment/vocab), all core types in `casehub-eidos-api`, `EidosProcessor` @BuildStep,
-publish.yml workflow, parent workflows updated (dashboard, full-stack, incremental).
-Bidirectional symlinks and CLAUDE.md cross-references in place. Memory seeded
-for eidos workspace.
+**casehub-eidos bootstrapped:** Maven structure, all core types in `casehub-eidos-api`,
+`EidosProcessor` @BuildStep, publish.yml, parent workflows updated. Bidirectional
+symlinks, CLAUDE.md cross-references, memory seeded for eidos workspace.
 
-## Blocking — Platform Needs to Dispatch to Ledger
-
-casehubio/ledger CI is failing: can't resolve `casehub-platform-api:0.2-SNAPSHOT` because
-platform's `publish.yml` doesn't dispatch to ledger after publishing. Fix belongs in the
-platform Claude session — add to platform's publish.yml `Trigger downstream CI` step:
-```
-gh api repos/casehubio/ledger/dispatches -f event_type=upstream-published ...
-```
-**Do not touch platform — that session is actively writing. Hand this off to them.**
+**CI fixes:**
+- `casehub-platform` publish.yml: now dispatches to ledger + connectors after publish
+- `casehub-ledger` pom.xml: added `<repositories>` section for casehub-platform-api
+  resolution (introduced as a dep by #88 but no repo declared — matched qhorus pattern)
 
 ## Immediate Next Step
 
 Open the eidos workspace and start Phase 1:
-```bash
-# workspace: /Users/mdproctor/claude/public/casehub/eidos
-# project:   /Users/mdproctor/claude/casehub/eidos
 ```
-`work-start` to create a branch + issue, then implement:
+workspace: /Users/mdproctor/claude/public/casehub/eidos
+project:   /Users/mdproctor/claude/casehub/eidos
+```
+`work-start` → branch + issue → implement:
 - `JpaAgentRegistry` + `JpaReactiveAgentRegistry`
 - `CdiVocabularyRegistry`
 - `InMemoryAgentRegistry` in persistence-memory/
 - SVO, Conscientiousness, CasehubSlot vocab CDI beans in vocab/
 
-## What's Next (ledger)
-
-*Unchanged — `git show HEAD~1:HANDOFF.md`*
-
 ## References
 
 | What | Path |
 |------|------|
-| Eidos spec | `wksp/research/eidos.md` (or eidos workspace `research/eidos.md`) |
+| Eidos spec | `wksp/research/eidos.md` |
 | Latest blog | `blog/2026-05-22-mdp03-giving-agents-a-form.md` |
 | Previous handover | `git show HEAD~1:HANDOFF.md` |
