@@ -295,16 +295,54 @@ AgentX is the first system to combine:
 
 No existing framework has all four. A2A has description (partial). casehub-ledger has evidence. Nobody has the generative loop or the feedback.
 
-### A2A compatibility
+### A2A compatibility — fully extensible, no breaking changes
 
-`AgentDescriptor` can serialise as an A2A Agent Card extension — interoperable with the ecosystem while adding dimensions A2A intentionally omits. `ClaudeMarkdownRenderer` is unrelated to A2A; the `A2AAgentCardRenderer` implementation handles the wire format.
+The A2A spec (v1.0) explicitly states clients MUST ignore unrecognised fields. AgentX dimensions can be added without breaking A2A compatibility via three formal mechanisms:
+
+**Mechanism 1 — `AgentCapabilities.extensions[]`** (schema declaration)
+```json
+{
+  "capabilities": {
+    "extensions": [{
+      "uri": "https://agentx.io/extensions/v1/agent-dimensions",
+      "required": false,
+      "params": {
+        "roleTaxonomy": ["orchestrator","executor","critic","monitor","synthesiser","specialist"],
+        "dispositionModel": {
+          "svo": ["altruist","prosocial","individualist","competitive"],
+          "ruleFollowing": ["rigid","flexible","autonomous"],
+          "riskAppetite": ["conservative","balanced","aggressive"]
+        }
+      }
+    }]
+  }
+}
+```
+
+**Mechanism 2 — `metadata` maps** (actual values, namespaced)
+```json
+{
+  "metadata": {
+    "agentx_role": "critic",
+    "agentx_disposition_svo": "prosocial",
+    "agentx_rule_following": "flexible",
+    "agentx_epistemic_domains": {"java": 0.95, "rust": 0.42}
+  }
+}
+```
+
+**Mechanism 3 — Extended authenticated card** — `extendedAgentCard: true` enables a richer authenticated endpoint. Full `CapabilityHealth` state and `epistemicDomains` detail are candidates here — not everything should be public.
+
+**JWS signatures cover metadata.** Role and disposition values declared in metadata are included in the canonical JSON signing payload (RFC 8785 / RFC 7515). No extra work needed — they're cryptographically bound by default.
+
+**Community convergence:** GitHub Discussion [#1631](https://github.com/a2aproject/A2A/discussions/1631) — "Reputation-Aware Agent Discovery — A Trust Extension for A2A" — is independently proposing multi-dimensional behavioural/trust dimensions (success_rate, accuracy, speed, honesty) via the same extension mechanism. Direct contribution target when AgentX spec is further along.
 
 ### Contribution opportunities
 
 | Target | What to contribute |
 |--------|-------------------|
+| A2A Discussion #1631 | Engage on reputation/behavioural dimensions; contribute SVO + role taxonomy |
 | AgentO ontology | Functional role slot, SVO disposition axes, Goal formalism, Milestone, normative layer |
-| A2A ecosystem | Extended Agent Card schema with role + disposition dimensions |
 | OASIS W3C CG | LLM-specific agent extensions |
 
 ---
@@ -364,7 +402,7 @@ No existing framework has all four. A2A has description (partial). casehub-ledge
 ## What's Left to Research
 
 - [x] Feature vs. capability distinction — done. Two-layer architecture: static `AgentDescriptor` + dynamic `CapabilityHealth` SPI. `epistemicDomains` added to capability layer. New MAST failure class identified.
-- [ ] A2A Agent Card extensibility — can we add role + disposition without breaking compatibility?
+- [x] A2A Agent Card extensibility — done. Fully compatible via extensions[] + metadata maps. JWS signatures cover metadata. Discussion #1631 is the contribution target.
 - [ ] A2A Discussion #741 — registry/federation; where AgentX registry plugs in
 - [ ] OIDC-A delegation chains — how trust propagates when agent A delegates to agent B
 - [ ] WoT Thing Description Directory — most mature discovery implementation; SPARQL query model
