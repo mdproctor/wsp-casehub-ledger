@@ -99,12 +99,19 @@ capabilities:
     inputTypes: [text/diff, text/markdown]
     outputTypes: [text/markdown]
     tags: [java, security, quarkus]
+    epistemicDomains:        # sub-capability qualification — declared confidence per domain
+      java: 0.95
+      kotlin: 0.88
+      rust: 0.42
+      cobol: null            # unknown — agent has not operated in this domain
   - name: security-audit
     qualityHint: 0.70
     ...
 ```
 
 `qualityHint` is a self-declared prior. The `ActorTrustScore` per `CapabilityTag` in casehub-ledger is the evidence-backed replacement that accumulates over time. **LDP finding:** unverified quality hints actively degrade routing quality below the no-metadata baseline. The attestation layer is not optional.
+
+**`epistemicDomains`** is a new dimension not present in any existing framework. A capability tag is not binary — "code-review" has domain qualifications. An agent assigned a Rust PR when it has `rust: 0.42` (or null) will produce MAST FM-2.2 / FM-2.3 failures through undetected domain mismatch, not genuine misalignment. This distinction is currently invisible to all registries.
 
 **Operational fields** (`latencyHintP50Ms`, `costHint`) come from LDP — practically important for routing decisions.
 
@@ -138,6 +145,66 @@ Predictive of cooperation and consistency in LLMs. Steerable via representation 
 **Critical research finding:** behavioural consistency is weak. Self-declared disposition diverges from actual behaviour across contexts. This makes the attestation layer essential — a declared `prosocial` that behaves competitively in practice will accumulate FLAGGED verdicts and a degraded trust score. The descriptor is a prior; evidence updates it. This also explains MAST FM-2.6 (reasoning-action mismatch, 13.2% of all failures).
 
 **D&D alignment dropped:** good–evil ≈ SVO; law–chaos ≈ Conscientiousness. No empirical validation for AI agents. Overlaps with better-grounded frameworks.
+
+---
+
+## Two-Layer Capability Architecture
+
+The `AgentDescriptor` is the **static layer** — what an agent IS and CAN DO. Declared at registration, versioned, stored in the registry. But a declared capability is not the same as an operable one.
+
+**No existing framework has formalised this for LLM agents.** Robotics acknowledges the gap (Dussard 2023 explicitly flags it as future work). Microservices have Kubernetes probes but they're binary. MAST has no failure mode for "agent declared capable but not currently operable" — FM-2.2 and FM-2.3 (11.65% + 7.15% of failures) can both be produced by operability failures that MAST currently attributes to misalignment.
+
+AgentX introduces a `CapabilityHealth` **dynamic layer** — probed at dispatch time, TTL-limited, graduated:
+
+```
+READY | DEGRADED(reason) | UNAVAILABLE | EPISTEMICALLY_WEAK
+```
+
+Degradation reasons: `RATE_LIMITED`, `CONTEXT_EXHAUSTED`, `OVERLOADED`, `DOMAIN_MISMATCH`.
+
+### Dispatch flow in casehub-engine
+
+```
+WorkerProvisioner.getCapabilities()   → static filter  (declared capable?)
+TrustGateService.meetsThreshold()     → trust gate     (historically trustworthy?)
+CapabilityHealth.probe()              → health check   (operable right now?)
+      │
+      ├── READY           → schedule
+      ├── DEGRADED        → schedule with warning / log degradation reason
+      ├── UNAVAILABLE     → skip; try next candidate
+      └── EPISTEMICALLY_WEAK → skip unless no better candidate; log domain mismatch
+```
+
+If all candidates fail health check → `WorkerProvisioner.provision()` to spin up a new instance.
+
+### The `CapabilityHealth` SPI
+
+```java
+// in casehub-platform-api
+interface CapabilityHealth {
+    CapabilityStatus probe(String agentId, String capabilityTag, ProbeContext context);
+}
+
+record ProbeContext(String taskDomain, Map<String, Object> taskMetadata) {}
+
+sealed interface CapabilityStatus {
+    record Ready() implements CapabilityStatus {}
+    record Degraded(DegradationReason reason, String detail) implements CapabilityStatus {}
+    record Unavailable(String reason) implements CapabilityStatus {}
+    record EpistemicallyWeak(String domain, double confidence) implements CapabilityStatus {}
+}
+```
+
+Default implementation: checks context utilisation, rate limit headroom, and `epistemicDomains` from the descriptor against the requested task domain. Consumers override for platform-specific health signals (e.g., hitting the Claude API to check session state).
+
+### New MAST failure class
+
+The MAST taxonomy (NeurIPS 2025) has no failure mode for capability operability failure. AgentX logging of `CapabilityHealth.probe()` results — including degradation reasons and domain mismatch decisions — creates the observability to distinguish:
+
+- **Genuine misalignment** (FM-2.2 / FM-2.3): agent received appropriate task, miscoordinated
+- **Operability failure** (new): agent was dispatched despite degraded state; failure was preventable at routing time
+
+This is the first framework to make this distinction observable.
 
 ---
 
@@ -296,7 +363,7 @@ No existing framework has all four. A2A has description (partial). casehub-ledge
 
 ## What's Left to Research
 
-- [ ] Feature vs. capability distinction (robotics) — "declared capable" vs. "currently operable"; runtime availability
+- [x] Feature vs. capability distinction — done. Two-layer architecture: static `AgentDescriptor` + dynamic `CapabilityHealth` SPI. `epistemicDomains` added to capability layer. New MAST failure class identified.
 - [ ] A2A Agent Card extensibility — can we add role + disposition without breaking compatibility?
 - [ ] A2A Discussion #741 — registry/federation; where AgentX registry plugs in
 - [ ] OIDC-A delegation chains — how trust propagates when agent A delegates to agent B
