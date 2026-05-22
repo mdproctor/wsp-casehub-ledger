@@ -1,50 +1,42 @@
 # CaseHub Ledger — Session Handover
-**Date:** 2026-05-22
+**Date:** 2026-05-23
 
 ## Current State
 
 449 tests, BUILD SUCCESS. Both ledger repos on `main`, casehubio/ledger CI green ✅.
-Binaries published to GitHub Packages. casehub-eidos bootstrapped on casehubio/eidos
-and mdproctor/eidos, workspace on wsp-casehub-eidos.
+Binaries published to GitHub Packages.
 
-## What Landed This Session
+**Eidos handed off** — a separate Claude session is now working in casehub-eidos.
+This session is ledger-only.
 
-**Housekeeping:** garden#1, parent#42, ledger#89 closed.
+## What Landed Previously
 
-**Research → spec → repo:** Six-domain research sweep produced `research/eidos.md`.
-Key findings: LDP unverified hints degrade quality; MAST 36.9% inter-agent misalignment;
-SVO over D&D for disposition; two-layer capability (static descriptor + dynamic
-CapabilityHealth probe). Named Eidos over Archetype (Maven collision), Idos (crypto),
-Ontos (ontology confusion).
-
-**Platform protocol:** `platform-api-scope.md` added to garden. PLATFORM.md updated.
-
-**casehub-eidos bootstrapped:** Maven structure, all core types in `casehub-eidos-api`,
-`EidosProcessor` @BuildStep, publish.yml, parent workflows updated. Bidirectional
-symlinks, CLAUDE.md cross-references, memory seeded for eidos workspace.
-
-**CI fixes:**
-- `casehub-platform` publish.yml: now dispatches to ledger + connectors after publish
-- `casehub-ledger` pom.xml: added `<repositories>` section for casehub-platform-api
-  resolution (introduced as a dep by #88 but no repo declared — matched qhorus pattern)
+*Unchanged — `git show HEAD~1:HANDOFF.md`*
 
 ## Immediate Next Step
 
-Open the eidos workspace and start Phase 1:
-```
-workspace: /Users/mdproctor/claude/public/casehub/eidos
-project:   /Users/mdproctor/claude/casehub/eidos
-```
-`work-start` → branch + issue → implement:
-- `JpaAgentRegistry` + `JpaReactiveAgentRegistry`
-- `CdiVocabularyRegistry`
-- `InMemoryAgentRegistry` in persistence-memory/
-- SVO, Conscientiousness, CasehubSlot vocab CDI beans in vocab/
+Pick up one of the open ledger issues. Most actionable:
+
+- **#97** — Strengthen ArchUnit parity check to verify `Uni<T>` wraps correct return type (S / Low)
+- **#91** — Add `persistence-memory/` module — zero-config ephemeral install and in-memory test support (M / Med)
+- **#90** — Evaluate `LedgerTraceIdProvider` SPI move to `casehub-platform-api` (S / Med)
+
+Run `work-start` from `main` to branch off the chosen issue.
+
+## What's Next
+
+| # | Description | Scale | Complexity | Notes |
+|---|-------------|-------|------------|-------|
+| #97 | Strengthen ArchUnit `Uni<T>` return-type parity check | S | Low | Good warm-up; unblocks confidence in reactive tier |
+| #91 | `persistence-memory/` module | M | Med | Useful for eidos too once we confirm scope |
+| #90 | `LedgerTraceIdProvider` SPI → platform-api migration | S | Med | Needs platform coherence check first |
+| #96 | Code-gen approach for reactive service tier | L | High | Exploratory; no rush |
+| #85 | External key distribution (TUF/HSM/PKI) | L | High | Future work |
 
 ## References
 
 | What | Path |
 |------|------|
-| Eidos spec | `wksp/research/eidos.md` |
+| Eidos spec | `wksp/research/eidos.md` (context only — not ledger work) |
 | Latest blog | `blog/2026-05-22-mdp03-giving-agents-a-form.md` |
 | Previous handover | `git show HEAD~1:HANDOFF.md` |
