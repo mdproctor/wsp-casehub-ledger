@@ -1,8 +1,9 @@
 # AgentX — Specification
 
-**Status:** Research / Pre-spec  
+**Status:** Pre-implementation spec  
 **Started:** 2026-05-22  
 **Working name:** AgentX (permanent name TBD)  
+**Strategy:** Build first. Engage A2A / open standard community when casehub is ready.  
 **Research backing:** `agent-description-ontology.md`, `casehub-platform-vocabulary-validation.md`
 
 ---
@@ -13,9 +14,9 @@ AgentX is a new casehub platform repo that gives LLM agents a structured, discov
 
 Three things it enables:
 
-1. **Description** — a structured `AgentDescriptor` that captures what an agent is across multiple dimensions (role, capabilities, disposition, operational profile), grounded in empirical research rather than convention.
+1. **Description** — a structured `AgentDescriptor` capturing what an agent is across multiple dimensions (slot, capabilities, disposition, operational profile), grounded in empirical research rather than convention.
 
-2. **Discovery** — a registry that lets orchestrators, humans, and other agents find the right agent for a task: "find me a cautious critic with demonstrated code-review accuracy above 0.8."
+2. **Discovery** — a registry and vocabulary system that lets orchestrators, humans, and other agents find the right agent for a task: "find me a cautious critic with demonstrated code-review accuracy above 0.8 in Java."
 
 3. **Generation** — a `SystemPromptRenderer` SPI that turns a descriptor + a case goal into a rendered CLAUDE.md (or any LLM system prompt). The ontology drives the generation; outcomes feed back as attestations; the knowledge graph learns which configurations work for which task types.
 
@@ -27,27 +28,43 @@ AgentX is **higher-order** than the ledger. It depends on casehub-ledger's attes
 
 `casehub-ledger` is a narrow, stable foundation library — audit, tamper evidence, attestation, trust scores. Its consumers (`casehub-work`, `casehub-qhorus`, `casehub-engine`) depend on it. It stays focused.
 
-AgentX sits above that:
-
 ```
-casehub-platform-api
-  ├── AgentDescriptor          (type — consumed by ledger, AgentX, and consumers)
-  └── SystemPromptRenderer     (SPI — implemented in AgentX)
+casehub-platform-api       (existing — types added here)
+  ├── AgentDescriptor
+  ├── AgentCapability
+  ├── AgentDisposition
+  ├── Vocabulary
+  ├── VocabularyRegistry   (SPI)
+  ├── AgentRegistry        (SPI)
+  ├── CapabilityHealth     (SPI)
+  └── SystemPromptRenderer (SPI)
 
-casehub-ledger                 (unchanged)
+casehub-ledger             (unchanged)
   ├── LedgerEntry, attestation, trust scores, signing, key rotation
-  └── depends on casehub-platform-api (already does)
+  └── agentConfigHash already in ProvenanceSupplement (= weightsFingerprint)
 
-agentx                         (new repo)
-  ├── AgentRegistry            (store + discovery)
-  ├── ClaudeMarkdownRenderer   (@DefaultBean SystemPromptRenderer)
-  ├── LLM prose renderer       (disposition → natural language section)
-  └── Knowledge graph          (descriptor × task × outcome × attestation)
-       depends on → casehub-ledger  (evidence layer)
-       depends on → casehub-platform-api  (types)
+agentx/                    (new repo)
+  ├── api/                 — AgentX-specific types and SPIs (if any beyond platform-api)
+  ├── runtime/             — JPA implementations, ClaudeMarkdownRenderer, registry store
+  │   ├── JpaAgentRegistry
+  │   ├── DefaultCapabilityHealth
+  │   ├── ClaudeMarkdownRenderer   (@DefaultBean SystemPromptRenderer)
+  │   └── A2AAgentCardSerializer
+  ├── deployment/          — Quarkus extension @BuildStep
+  └── vocab/               — optional vocabulary module (not required)
+      ├── SvoVocabulary
+      ├── ConscientiousnessVocabulary
+      └── CasehubSlotVocabulary
 ```
 
-`AgentDescriptor` and `SystemPromptRenderer` go in `casehub-platform-api` because they are fundamental types other repos may reference without pulling in the full AgentX implementation.
+**Maven coordinates (tentative):**
+
+| Module | artifactId |
+|--------|-----------|
+| Runtime | `casehub-agentx` |
+| Deployment | `casehub-agentx-deployment` |
+| Vocabulary (optional) | `casehub-agentx-vocab` |
+| Types | added to `casehub-platform-api` (existing) |
 
 ---
 
@@ -55,106 +72,200 @@ agentx                         (new repo)
 
 A structured description of an individual LLM agent across four layers. Self-declared at registration; validated over time by attestations and trust scores.
 
+**Key design principle:** The descriptor defines **structure** (what fields exist). Vocabularies define **values** (what goes in those fields). The platform never hardcodes vocabulary values — that is always the domain's job.
+
 ### Layer 1 — Identity
 
 | Field | Type | Notes |
 |-------|------|-------|
-| `agentId` | URI / structured name | Extends existing `actorId` format: `{model-family}:{persona}@{major}` |
-| `name` | string | Human-readable |
-| `version` | semver | Major bump = trust baseline reset |
-| `provider` | string | Organisation or individual |
-| `modelFamily` | string | e.g. `"claude"`, `"gpt"`, `"gemini"` |
-| `modelVersion` | string | Specific model version |
-| `weightsFingerprint` | string | Integrity hash — equivalent to `agentConfigHash` already in `ProvenanceSupplement` |
+| `agentId` | String | Same value as `actorId` in casehub-ledger: `{model-family}:{persona}@{major}` |
+| `name` | String | Human-readable display name |
+| `version` | String | semver — major bump resets trust baseline |
+| `provider` | String | Organisation or individual |
+| `modelFamily` | String | e.g. `"claude"`, `"gpt"`, `"gemini"` |
+| `modelVersion` | String | Specific model version |
+| `weightsFingerprint` | String | Integrity hash — equivalent to `agentConfigHash` in `ProvenanceSupplement` (casehub-ledger), which already captures LLM config drift |
 
-`actorId` already handles identity in casehub-ledger. `AgentDescriptor.agentId` extends it; they must be the same value when an agent both has a descriptor and writes ledger entries.
+`agentId` must equal `actorId` when an agent both has a descriptor and writes ledger entries. The two identity systems must be consistent.
 
-### Layer 2 — Functional Role
+### Layer 2 — Slot
 
-A closed vocabulary defining what *slot* the agent fills in a team.
+What position the agent fills in a team. **Open String — domain defines values, not the platform.**
 
-| Value | Meaning |
-|-------|---------|
-| `orchestrator` | Decomposes goals, delegates to others, integrates results |
-| `executor` | Carries out a specific well-defined task |
-| `critic` | Reviews, evaluates, gatekeeps |
-| `monitor` | Observes, detects anomalies, reports |
-| `synthesiser` | Combines outputs from multiple sources |
-| `specialist` | Deep capability in a narrow domain |
+```java
+record AgentDescriptor(
+    ...
+    String slot,   // e.g. "planner", "critic", "mayor", "gatekeeper" — domain-defined
+    ...
+)
+```
 
-**Research backing:** MAST FM-1.2 (disobey role specification) cascades into 36.9% inter-agent misalignment. Undefined roles are a structural failure mode, not a model limitation.
+The platform provides no hardcoded constants for slot. Domain apps define their own vocabulary and register it via `VocabularyRegistry`. Optional well-known values are published in `casehub-agentx-vocab` for apps that want a starting point.
 
-**Game AI analogue:** D&D party roles (Defender/Striker/Leader/Controller). GasTown analogue: Mayor/Polecat/Witness/Deacon/Refinery.
+**Research backing:** MAST FM-1.2 (disobey role specification) cascades into 36.9% inter-agent misalignment. Structured slot declaration — in any vocabulary — is failure prevention, not routing convenience.
+
+**Domain examples:**
+- DevTown: `"planner"`, `"coder"`, `"reviewer"`, `"tester"`
+- GasTown: `"mayor"`, `"polecat"`, `"witness"`, `"deacon"`, `"refinery"`
+- Clinical: `"approver"`, `"adjudicator"`, `"supervisor"`
+- Game: `"aggressor"`, `"defender"`, `"scout"`, `"support"`
 
 ### Layer 3 — Capabilities
 
-What the agent can do — open vocabulary of skills with operational metadata per skill.
+What the agent can do. Capability names are open strings; the operational metadata is structured.
 
-```yaml
-capabilities:
-  - name: code-review
-    qualityHint: 0.85        # self-declared prior; attestations update this
-    latencyHintP50Ms: 8000
-    costHint: medium
-    inputTypes: [text/diff, text/markdown]
-    outputTypes: [text/markdown]
-    tags: [java, security, quarkus]
-    epistemicDomains:        # sub-capability qualification — declared confidence per domain
-      java: 0.95
-      kotlin: 0.88
-      rust: 0.42
-      cobol: null            # unknown — agent has not operated in this domain
-  - name: security-audit
-    qualityHint: 0.70
-    ...
+```java
+record AgentCapability(
+    String name,                         // open string — "code-review", "security-audit"
+    double qualityHint,                  // self-declared prior 0–1; attestations update this
+    Long latencyHintP50Ms,               // median latency estimate
+    String costHint,                     // open string — "low", "medium", "high"
+    List<String> inputTypes,             // MIME types
+    List<String> outputTypes,
+    List<String> tags,                   // additional classification
+    Map<String, Double> epistemicDomains // sub-capability qualification per domain
+                                         // e.g. {"java": 0.95, "rust": 0.42, "cobol": null}
+)
 ```
 
-`qualityHint` is a self-declared prior. The `ActorTrustScore` per `CapabilityTag` in casehub-ledger is the evidence-backed replacement that accumulates over time. **LDP finding:** unverified quality hints actively degrade routing quality below the no-metadata baseline. The attestation layer is not optional.
+**`qualityHint` is a self-declared prior.** The `ActorTrustScore` per `CapabilityTag` in casehub-ledger is the evidence-backed replacement that accumulates over time. LDP finding: unverified quality hints actively degrade routing quality below the no-metadata baseline. The attestation layer is not optional.
 
-**`epistemicDomains`** is a new dimension not present in any existing framework. A capability tag is not binary — "code-review" has domain qualifications. An agent assigned a Rust PR when it has `rust: 0.42` (or null) will produce MAST FM-2.2 / FM-2.3 failures through undetected domain mismatch, not genuine misalignment. This distinction is currently invisible to all registries.
+**`epistemicDomains`** — new, not present in any existing framework. A capability tag is not binary. An agent assigned a Rust PR when it has `rust: 0.42` (or null) will produce MAST FM-2.2 / FM-2.3 failures through undetected domain mismatch. This distinction is currently invisible to all registries.
 
-**Operational fields** (`latencyHintP50Ms`, `costHint`) come from LDP — practically important for routing decisions.
+**Regulatory fields** (on AgentDescriptor, not per-capability):
 
-**Regulatory fields:**
-| Field | Purpose |
-|-------|---------|
-| `jurisdiction` | Regulatory scope (e.g. `"EU"`, `"UK"`, `"US"`) |
-| `dataHandlingPolicy` | Data governance rules |
+| Field | Type | Purpose |
+|-------|------|---------|
+| `jurisdiction` | String | Regulatory scope — `"EU"`, `"UK"`, `"US"` |
+| `dataHandlingPolicy` | String | Data governance rules |
 
-### Layer 4 — Behavioural Disposition
+### Layer 4 — Disposition
 
-How the agent approaches tasks. Three axes, all self-declared, all attestable from observed behaviour.
+How the agent approaches tasks. **All fields are open String — domain defines values via vocabulary.** All are self-declared; all are attestable from observed behaviour over time.
 
+```java
+record AgentDisposition(
+    String socialOrient,    // open — e.g. "prosocial", "competitive", "ruthless", "kind"
+    String ruleFollowing,   // open — e.g. "rigid", "flexible", "autonomous"
+    String riskAppetite,    // open, optional — e.g. "conservative", "balanced", "aggressive"
+    String autonomy,        // open — e.g. "full", "supervised", "human_in_loop"
+    boolean delegation      // binary — can this agent spawn sub-agents? platform-semantic.
+)
+```
+
+`delegation` is boolean because "can this agent spawn sub-agents" is binary and has platform-semantic meaning for the orchestration engine. Everything else is open String.
+
+**Research backing for the axes:**
+- `socialOrient` — Social Value Orientation (SVO): best-grounded disposition axis in the literature. Observable from allocation, cooperation, negotiation decisions. Validated in multi-agent RL and LLMs directly (2025–2026).
+- `ruleFollowing` — Conscientiousness axis: predictive of cooperation and consistency. Steerable via representation engineering. Observable from rule adherence, planning, recovery from ambiguity.
+- `riskAppetite` — emerging from RL exploiter roles and behavioural economics. Not yet fully formalised but practically important for routing.
+
+**Critical finding:** behavioural consistency is weak. Self-declared disposition diverges from actual behaviour across contexts. The attestation layer is essential — a declared "prosocial" that behaves competitively accumulates FLAGGED verdicts and a degraded trust score. The descriptor is a prior; evidence updates it. This explains MAST FM-2.6 (reasoning-action mismatch, 13.2% of all failures).
+
+D&D alignment axes were considered and dropped — they overlap with SVO and Conscientiousness with no empirical validation for AI agents.
+
+---
+
+## Pluggable Vocabulary System
+
+**The platform defines structure. Domains define vocabulary.** This is the core principle.
+
+### Vocabulary type
+
+```java
+record Vocabulary(
+    String uri,           // unique identifier — "https://devtown.io/vocab/slots/v1"
+    String name,          // human-readable
+    String version,
+    Map<String, VocabularyTerm> terms   // value → term definition
+)
+
+record VocabularyTerm(
+    String value,          // e.g. "planner"
+    String label,          // human-readable
+    String description,
+    List<String> aliases,  // e.g. ["orchestrator", "coordinator"] — for cross-vocab discovery
+    Map<String, String> exactMatches  // URI → equivalent term in another vocabulary
+)
+```
+
+### VocabularyRegistry SPI
+
+```java
+// in casehub-platform-api
+interface VocabularyRegistry {
+    void register(Vocabulary vocabulary);
+    Optional<Vocabulary> find(String uri);
+    Optional<VocabularyTerm> resolve(String vocabularyUri, String value);
+    Set<String> equivalentValues(String vocabularyUri, String value, String targetVocabularyUri);
+}
+```
+
+Apps register vocabularies at startup. The registry resolves equivalences between vocabularies for cross-vocabulary discovery.
+
+### Domain profile on AgentDescriptor
+
+```java
+record AgentDescriptor(
+    // identity...
+    String domainVocabulary,       // default vocabulary URI — covers all fields
+    String slotVocabulary,         // optional override for slot only
+    String dispositionVocabulary,  // optional override for all disposition fields
+    String slot,
+    List<AgentCapability> capabilities,
+    AgentDisposition disposition,
+    // regulatory...
+)
+```
+
+**Common case — one line:**
 ```yaml
+domainVocabulary: "https://devtown.io/vocab/v1"
+slot: "planner"
 disposition:
-  socialOrient: prosocial          # altruist | prosocial | individualist | competitive
-  ruleFollowing: flexible          # rigid | flexible | autonomous
-  riskAppetite: conservative       # conservative | balanced | aggressive (optional)
-  autonomy: supervised             # full | supervised | human_in_loop
-  delegation: true                 # can this agent spawn sub-agents?
+  socialOrient: "methodical"
+  ruleFollowing: "flexible"
+  autonomy: "supervised"
+  delegation: false
 ```
 
-**`socialOrient` — Social Value Orientation (SVO)**  
-Best-grounded disposition axis in the literature. Validated in behavioural economics, multi-agent RL, and LLMs directly (2025–2026). Observable from allocation, cooperation, and negotiation decisions. Replaces the earlier D&D-inspired `otherWeight` axis.
+**Override case — mix vocabularies:**
+```yaml
+domainVocabulary: "https://devtown.io/vocab/v1"
+dispositionVocabulary: "https://agentx.io/vocab/svo/v1"   # use SVO for disposition
+slot: "planner"
+disposition:
+  socialOrient: "prosocial"    # SVO vocabulary value
+  ruleFollowing: "flexible"    # SVO vocabulary value
+```
 
-**`ruleFollowing` — Conscientiousness axis**  
-Predictive of cooperation and consistency in LLMs. Steerable via representation engineering. Observable from rule adherence, planning behaviour, recovery from ambiguity.
+**No vocabulary — raw strings, exact match only:**
+```yaml
+slot: "my-custom-slot"   # no vocabulary; exact match only in discovery
+```
 
-**`riskAppetite`** — Emerging from RL exploiter roles and behavioural economics. Not yet fully formalised but practically important for routing (conservative agent for high-stakes; aggressive for open-ended exploration).
+### Cross-vocabulary discovery
 
-**Critical research finding:** behavioural consistency is weak. Self-declared disposition diverges from actual behaviour across contexts. This makes the attestation layer essential — a declared `prosocial` that behaves competitively in practice will accumulate FLAGGED verdicts and a degraded trust score. The descriptor is a prior; evidence updates it. This also explains MAST FM-2.6 (reasoning-action mismatch, 13.2% of all failures).
+If DevTown's `"planner"` declares `exactMatch: "https://casehub.io/vocab/slots/v1#orchestrator"`, then querying for slot = "orchestrator" in the registry can surface DevTown agents with slot = "planner". The registry resolves the equivalence; the querying agent doesn't need to know DevTown's vocabulary.
 
-**D&D alignment dropped:** good–evil ≈ SVO; law–chaos ≈ Conscientiousness. No empirical validation for AI agents. Overlaps with better-grounded frameworks.
+### The optional `casehub-agentx-vocab` module
+
+Provides well-known starting-point vocabularies. **Not required.** Apps that want their own vocabulary don't use this. Apps that want a shared baseline can depend on it.
+
+- `CasehubSlotVocabulary` — orchestrator, executor, critic, monitor, synthesiser, specialist
+- `SvoVocabulary` — altruist, prosocial, individualist, competitive
+- `ConscientiousnessVocabulary` — rigid, flexible, autonomous
+- `RiskAppetiteVocabulary` — conservative, balanced, aggressive
 
 ---
 
 ## Two-Layer Capability Architecture
 
-The `AgentDescriptor` is the **static layer** — what an agent IS and CAN DO. Declared at registration, versioned, stored in the registry. But a declared capability is not the same as an operable one.
+The `AgentDescriptor` is the **static layer** — what an agent IS and CAN DO. Declared at registration, versioned, stored. But a declared capability is not the same as an operable one.
 
-**No existing framework has formalised this for LLM agents.** Robotics acknowledges the gap (Dussard 2023 explicitly flags it as future work). Microservices have Kubernetes probes but they're binary. MAST has no failure mode for "agent declared capable but not currently operable" — FM-2.2 and FM-2.3 (11.65% + 7.15% of failures) can both be produced by operability failures that MAST currently attributes to misalignment.
+No existing framework has formalised this for LLM agents. Robotics acknowledges the gap (Dussard 2023). Microservices have Kubernetes probes but binary. MAST has no failure mode for "agent declared capable but not currently operable."
 
-AgentX introduces a `CapabilityHealth` **dynamic layer** — probed at dispatch time, TTL-limited, graduated:
+AgentX introduces `CapabilityHealth` — the **dynamic layer**, probed at dispatch time, TTL-limited, graduated:
 
 ```
 READY | DEGRADED(reason) | UNAVAILABLE | EPISTEMICALLY_WEAK
@@ -162,22 +273,22 @@ READY | DEGRADED(reason) | UNAVAILABLE | EPISTEMICALLY_WEAK
 
 Degradation reasons: `RATE_LIMITED`, `CONTEXT_EXHAUSTED`, `OVERLOADED`, `DOMAIN_MISMATCH`.
 
-### Dispatch flow in casehub-engine
+### Dispatch flow (casehub-engine integration)
 
 ```
 WorkerProvisioner.getCapabilities()   → static filter  (declared capable?)
 TrustGateService.meetsThreshold()     → trust gate     (historically trustworthy?)
 CapabilityHealth.probe()              → health check   (operable right now?)
       │
-      ├── READY           → schedule
-      ├── DEGRADED        → schedule with warning / log degradation reason
-      ├── UNAVAILABLE     → skip; try next candidate
-      └── EPISTEMICALLY_WEAK → skip unless no better candidate; log domain mismatch
+      ├── READY               → schedule
+      ├── DEGRADED            → schedule with warning; log degradation reason to ledger
+      ├── UNAVAILABLE         → skip; try next candidate
+      └── EPISTEMICALLY_WEAK  → skip unless no better candidate; log domain mismatch
+      
+If all candidates fail → WorkerProvisioner.provision() with epistemic constraints
 ```
 
-If all candidates fail health check → `WorkerProvisioner.provision()` to spin up a new instance.
-
-### The `CapabilityHealth` SPI
+### `CapabilityHealth` SPI
 
 ```java
 // in casehub-platform-api
@@ -187,7 +298,12 @@ interface CapabilityHealth {
 
 record ProbeContext(String taskDomain, Map<String, Object> taskMetadata) {}
 
-sealed interface CapabilityStatus {
+sealed interface CapabilityStatus permits
+    CapabilityStatus.Ready,
+    CapabilityStatus.Degraded,
+    CapabilityStatus.Unavailable,
+    CapabilityStatus.EpistemicallyWeak {
+
     record Ready() implements CapabilityStatus {}
     record Degraded(DegradationReason reason, String detail) implements CapabilityStatus {}
     record Unavailable(String reason) implements CapabilityStatus {}
@@ -195,16 +311,13 @@ sealed interface CapabilityStatus {
 }
 ```
 
-Default implementation: checks context utilisation, rate limit headroom, and `epistemicDomains` from the descriptor against the requested task domain. Consumers override for platform-specific health signals (e.g., hitting the Claude API to check session state).
+Default implementation checks context utilisation, rate limit headroom, and `epistemicDomains` from the descriptor. Consumers override with platform-specific signals.
 
 ### New MAST failure class
 
-The MAST taxonomy (NeurIPS 2025) has no failure mode for capability operability failure. AgentX logging of `CapabilityHealth.probe()` results — including degradation reasons and domain mismatch decisions — creates the observability to distinguish:
-
+MAST taxonomy has no failure mode for capability operability failure. AgentX logging of `CapabilityHealth.probe()` results creates the observability to distinguish:
 - **Genuine misalignment** (FM-2.2 / FM-2.3): agent received appropriate task, miscoordinated
-- **Operability failure** (new): agent was dispatched despite degraded state; failure was preventable at routing time
-
-This is the first framework to make this distinction observable.
+- **Operability failure** (new): agent was dispatched despite degraded state; preventable at routing time
 
 ---
 
@@ -225,7 +338,7 @@ AgentDescriptor       ──┼──▶  SystemPromptRenderer  ──▶  rende
                        └──────────── update trust scores / knowledge graph
 ```
 
-**The goal comes from the Case** — `CaseDefinition.Goal` is already a formal evaluable expression in casehub-engine. You read it; you don't invent it.
+**The goal comes from the Case** — `CaseDefinition.Goal` is a formal evaluable expression in casehub-engine. You read it; you don't invent it.
 
 **Same descriptor, different context → different agent:**
 
@@ -233,18 +346,18 @@ AgentDescriptor       ──┼──▶  SystemPromptRenderer  ──▶  rende
 
 | Descriptor | Context | Rendered disposition |
 |-----------|---------|---------------------|
-| `slot: critic, socialOrient: prosocial, ruleFollowing: flexible` | `"reviewer of intern submissions"` | "Be skeptical but kind — your role is coaching, not gatekeeping. Adapt your feedback to the author's level." |
-| `slot: critic, socialOrient: competitive, ruleFollowing: rigid` | `"gatekeeper for production branch"` | "Standards are non-negotiable. Reject anything that wastes the team's time. Do not soften feedback." |
+| `slot: "critic", socialOrient: "prosocial", ruleFollowing: "flexible"` | `"reviewer of intern submissions"` | "Be skeptical but kind — your role is coaching, not gatekeeping." |
+| `slot: "critic", socialOrient: "competitive", ruleFollowing: "rigid"` | `"gatekeeper for production branch"` | "Standards are non-negotiable. Reject anything that wastes the team's time." |
 
 Same goal. Same capability. Radically different behaviour from two structured dimension choices.
 
-**What this enables:** systematic experimentation. Hold the goal constant. Vary the disposition. Observe outcomes. The knowledge graph accumulates `(descriptor config, task type, outcome, attestation)` tuples — institutional memory for which configurations work for which task types.
+**Systematic experimentation:** hold the goal constant, vary the disposition, observe outcomes. The knowledge graph accumulates `(descriptor config, task type, outcome, attestation)` tuples — institutional memory for which configurations work for which task types.
 
 ---
 
 ## SystemPromptRenderer SPI
 
-Designed for the current target (CLAUDE.md) but extensible to any LLM format from day one.
+Format-agnostic from day one. Current target: CLAUDE.md.
 
 ```java
 // in casehub-platform-api
@@ -252,24 +365,27 @@ interface SystemPromptRenderer {
     RenderedPrompt render(AgentDescriptor descriptor, Goal goal, RenderContext context);
 }
 
-record RenderContext(String situationalContext, RenderFormat format, Locale locale) {}
+record RenderContext(
+    String situationalContext,   // e.g. "reviewer of intern submissions"
+    RenderFormat format,         // CLAUDE_MD | OPENAI_SYSTEM | A2A_CARD | GEMINI
+    Locale locale
+)
 ```
 
-Implementations:
-
 | Implementation | Format | Notes |
-|---------------|--------|-------|
+|---|---|---|
 | `ClaudeMarkdownRenderer` | CLAUDE.md | `@DefaultBean` — current target |
 | `OpenAISystemPromptRenderer` | OpenAI system message | Future |
 | `A2AAgentCardRenderer` | A2A Agent Card JSON | Future |
 | `GeminiSystemPromptRenderer` | Gemini system instruction | Future |
 
-**Hybrid rendering within each renderer:**
+**Hybrid rendering:**
+- **Template layer (Qute):** structural skeleton — slot header, goal injection, capability list, format-specific structure. Deterministic.
+- **LLM prose layer:** disposition section only — renders socialOrient + ruleFollowing + situationalContext into 2–3 natural language sentences. Lightweight LLM call at descriptor registration time, not at runtime. Cached by `(descriptorHash + contextHash)`.
 
-- **Template layer (Qute):** structural skeleton — role header, goal injection, capability list, format-specific sections. Fully deterministic.
-- **LLM prose layer:** disposition section only — renders SVO + conscientiousness + context into 2–3 sentences of natural language behavioural instruction. Lightweight LLM call at *descriptor registration time*, not at runtime. Cached by `(descriptorHash + contextHash)`.
+The CLAUDE.md structure lives entirely inside `ClaudeMarkdownRenderer`. The descriptor and SPI know nothing about it.
 
-The CLAUDE.md-specific structure lives entirely inside `ClaudeMarkdownRenderer`. The `AgentDescriptor` and SPI contract know nothing about CLAUDE.md format.
+**Rendering unit:** a structured *section* for inclusion in the agent's CLAUDE.md alongside repo-specific content — not a full file replacement.
 
 ---
 
@@ -279,27 +395,26 @@ The CLAUDE.md-specific structure lives entirely inside `ClaudeMarkdownRenderer`.
 
 | Layer | Who | What it has | Gap |
 |-------|-----|-------------|-----|
-| Capability advertisement | A2A Agent Cards | Skills, input/output types, auth schemes | No role slot, no disposition, no trust evidence |
-| Model identity | LDP (arXiv:2603.08852) | Model family, quality hints, reasoning profile | Profile is one-dimensional freeform; hints are designer-assigned |
-| Agent naming | OWASP ANS, A2A registry | Protocol + capability + provider + version | No behavioural dimensions |
-| Agent auth | OIDC-A | Delegation chains, attestation claims | Identity only, not capability or disposition |
-| Failure evidence | MAST (NeurIPS 2025) | 36.9% of failures are inter-agent misalignment | No structural fix — their fixes are prompt-based |
+| Capability advertisement | A2A Agent Cards | Skills, input/output types, auth schemes | No slot, no disposition, no trust evidence |
+| Model identity | LDP (arXiv:2603.08852) | Model family, quality hints, one-dimensional freeform reasoning profile | Hints designer-assigned; profile not structured |
+| Agent naming | OWASP ANS | Protocol + capability + provider + version | No behavioural dimensions |
+| Agent auth | OIDC-A | Delegation chains, attestation claims | Identity only |
+| Failure evidence | MAST (NeurIPS 2025) | 36.9% failures are inter-agent misalignment | No structural fix; fixes are prompt-based |
+| Reputation | A2A Discussion #1631 | Multi-party proposals, no standard yet | Fragmented; four competing proprietary approaches |
 
-### Where AgentX sits
+### Ecosystem fragmentation
 
-AgentX is the first system to combine:
-- **Structured multi-dimensional description** (role + capability + disposition) with closed vocabularies grounded in empirical research
-- **Evidence-backed trust** connecting self-declared dimensions to peer attestations over time
-- **Generative capability** turning structured descriptors into rendered system prompts
-- **Feedback loop** from outcomes back to descriptor refinement via the knowledge graph
+Discussion #1631 shows four independent proprietary implementations racing: ARP (custom trust substrate), MoltBridge (Neo4j graph), laplace0x (ERC-8004 Ethereum), and dispute resolution proposals. None coordinating on a shared standard. Classic early-market fragmentation.
 
-No existing framework has all four. A2A has description (partial). casehub-ledger has evidence. Nobody has the generative loop or the feedback.
+The standard is not settled. The window to influence it is open.
+
+casehub's posture differs from all of them: open standards (A2A extension mechanism, JWS, PROV-O), contribute back rather than proprietary lock-in.
 
 ### A2A compatibility — fully extensible, no breaking changes
 
-The A2A spec (v1.0) explicitly states clients MUST ignore unrecognised fields. AgentX dimensions can be added without breaking A2A compatibility via three formal mechanisms:
+A2A spec v1.0 explicitly states clients MUST ignore unrecognised fields.
 
-**Mechanism 1 — `AgentCapabilities.extensions[]`** (schema declaration)
+**Mechanism 1 — `extensions[]`** (schema declaration, vocabulary URIs not hardcoded values):
 ```json
 {
   "capabilities": {
@@ -307,43 +422,42 @@ The A2A spec (v1.0) explicitly states clients MUST ignore unrecognised fields. A
       "uri": "https://agentx.io/extensions/v1/agent-dimensions",
       "required": false,
       "params": {
-        "roleTaxonomy": ["orchestrator","executor","critic","monitor","synthesiser","specialist"],
-        "dispositionModel": {
-          "svo": ["altruist","prosocial","individualist","competitive"],
-          "ruleFollowing": ["rigid","flexible","autonomous"],
-          "riskAppetite": ["conservative","balanced","aggressive"]
-        }
+        "slotVocabulary": "https://devtown.io/vocab/slots/v1",
+        "dispositionVocabulary": "https://agentx.io/vocab/svo/v1"
       }
     }]
   }
 }
 ```
 
-**Mechanism 2 — `metadata` maps** (actual values, namespaced)
+**Mechanism 2 — `metadata` maps** (actual values, namespaced):
 ```json
 {
   "metadata": {
-    "agentx_role": "critic",
-    "agentx_disposition_svo": "prosocial",
-    "agentx_rule_following": "flexible",
+    "agentx_slot": "planner",
+    "agentx_slot_vocabulary": "https://devtown.io/vocab/slots/v1",
+    "agentx_disposition_social_orient": "prosocial",
     "agentx_epistemic_domains": {"java": 0.95, "rust": 0.42}
   }
 }
 ```
 
-**Mechanism 3 — Extended authenticated card** — `extendedAgentCard: true` enables a richer authenticated endpoint. Full `CapabilityHealth` state and `epistemicDomains` detail are candidates here — not everything should be public.
+**Mechanism 3 — Extended authenticated card** — `extendedAgentCard: true` for richer profiles served to authenticated clients. Full `CapabilityHealth` state and `epistemicDomains` detail live here.
 
-**JWS signatures cover metadata.** Role and disposition values declared in metadata are included in the canonical JSON signing payload (RFC 8785 / RFC 7515). No extra work needed — they're cryptographically bound by default.
+**JWS signatures cover metadata** — slot and disposition values are cryptographically bound by default.
 
-**Community convergence:** GitHub Discussion [#1631](https://github.com/a2aproject/A2A/discussions/1631) — "Reputation-Aware Agent Discovery — A Trust Extension for A2A" — is independently proposing multi-dimensional behavioural/trust dimensions (success_rate, accuracy, speed, honesty) via the same extension mechanism. Direct contribution target when AgentX spec is further along.
+**Contribution target:** A2A Discussion #1631 — engage when AgentX is built. Bring SVO vocabulary, slot taxonomy, and the connection between self-declared dimensions and attestation-backed trust scores.
 
-### Contribution opportunities
+### casehub-ledger as the evidence layer
 
-| Target | What to contribute |
-|--------|-------------------|
-| A2A Discussion #1631 | Engage on reputation/behavioural dimensions; contribute SVO + role taxonomy |
-| AgentO ontology | Functional role slot, SVO disposition axes, Goal formalism, Milestone, normative layer |
-| OASIS W3C CG | LLM-specific agent extensions |
+AgentX self-declared dimensions are priors. The evidence layer that validates or challenges them is already built in casehub-ledger:
+
+| AgentX self-declaration | casehub-ledger evidence |
+|------------------------|------------------------|
+| `qualityHint: 0.85` per capability | `ActorTrustScore` per `CapabilityTag` (Bayesian Beta, attestation-derived) |
+| `weightsFingerprint` | `agentConfigHash` in `ProvenanceSupplement` (already exists) |
+| `socialOrient: "prosocial"` | Peer attestation verdicts (SOUND/FLAGGED/ENDORSED/CHALLENGED) |
+| `delegation: true` | Causal chain via `causedByEntryId` in ledger entries |
 
 ---
 
@@ -351,9 +465,10 @@ The A2A spec (v1.0) explicitly states clients MUST ignore unrecognised fields. A
 
 - **Not a communication protocol** — that's A2A / MCP / Qhorus
 - **Not an orchestration engine** — that's casehub-engine
-- **Not an audit log** — that's casehub-ledger (though AgentX depends on it)
+- **Not an audit log** — that's casehub-ledger (AgentX depends on it)
 - **Not a trust scoring system** — that's casehub-ledger's `TrustScoreComputer` / `EigenTrustComputer`
-- **Not a replacement for CLAUDE.md** — `ClaudeMarkdownRenderer` generates a structured *section* that agents include in their CLAUDE.md alongside repo-specific content
+- **Not a replacement for CLAUDE.md** — `ClaudeMarkdownRenderer` generates a *section* for inclusion alongside repo-specific content
+- **Not a vocabulary authority** — platform defines structure; domains define vocabulary values
 
 ---
 
@@ -361,50 +476,123 @@ The A2A spec (v1.0) explicitly states clients MUST ignore unrecognised fields. A
 
 | Decision | Choice | Rationale |
 |----------|--------|-----------|
-| New repo vs. evolve ledger | New repo | Ledger is a narrow stable foundation dependency; AgentX is higher-order |
-| AgentDescriptor location | `casehub-platform-api` | Fundamental type; other repos may reference without pulling AgentX |
-| Disposition model | SVO + Conscientiousness + Risk appetite | Empirically grounded; replaces D&D alignment which has no academic validation |
-| Rendering strategy | Hybrid: Qute template + LLM prose | Template for deterministic structure; LLM for natural language disposition section |
-| Rendering timing | Registration time, not runtime | Determinism, cost, auditability — stored artifact, regenerated on descriptor change |
-| Quality hints | Self-declared prior + attestation update | LDP: unverified hints degrade quality below baseline; attestation layer is essential |
-| Heavy semantic stack | Excluded | Jena, RDF4J, JADE — out of scope; ontologies inform vocabulary only, not runtime deps |
+| New repo vs. evolve ledger | New repo | Ledger is narrow, stable, foundation; AgentX is higher-order and depends on it |
+| Type location | `casehub-platform-api` | AgentDescriptor et al. are cross-cutting; engine, qhorus, devtown all reference them |
+| Slot type | Open `String`, no platform constants | Domain apps define their own vocabulary; platform must not constrain |
+| Disposition field types | Open `String`, no platform constants | Same — "ruthless", "kind", "methodical" are domain-valid values |
+| `delegation` type | `boolean` | Binary, platform-semantic — orchestration engine needs this regardless of domain |
+| Vocabulary model | Pluggable `VocabularyRegistry` SPI; domain profiles with per-field overrides | Fluid, evolvable; `domainVocabulary` default + optional `slotVocabulary` / `dispositionVocabulary` overrides |
+| Optional vocab module | `casehub-agentx-vocab` | Recommended starting vocabulary; not required; SVO, Conscientiousness, CasehubSlot |
+| Disposition model basis | SVO + Conscientiousness + Risk appetite | Empirically grounded; replaces D&D which has no academic validation for AI agents |
+| Rendering strategy | Hybrid: Qute template + LLM prose | Template for deterministic structure; LLM for natural language disposition section only |
+| Rendering timing | Registration time, cached | Determinism, cost, auditability — stored artifact, regenerated on descriptor change |
+| Quality hints | Self-declared prior + attestation update | LDP: unverified hints degrade quality below baseline; attestation layer is not optional |
+| Heavy semantic stack | Excluded from runtime | Jena, RDF4J, JADE — out of scope; ontologies inform vocabulary, not runtime deps |
+| A2A engagement timing | Build first, engage later | Go full steam ahead; engage from position of strength with a working implementation |
+
+---
+
+## Roadmap — Tentative
+
+Target: one week to get the foundations in place. Four phases, iterating.
+
+### Phase 1 — The Descriptor (tonight → day 2–3)
+
+Get the core type into `casehub-platform-api` and a working registry in AgentX.
+
+- `AgentDescriptor` record — all four layers (identity, slot, capabilities, disposition)
+- `AgentCapability` record — name, qualityHint, latencyHint, costHint, inputTypes, outputTypes, tags, epistemicDomains
+- `AgentDisposition` record — open String fields + delegation boolean
+- `Vocabulary` and `VocabularyTerm` types
+- `VocabularyRegistry` SPI + in-memory default implementation
+- `AgentRegistry` SPI — register, findById, findBySlot, findByCapability
+- JPA `AgentDescriptorEntity` in AgentX runtime
+- `JpaAgentRegistry` implementation
+- `casehub-agentx-vocab` module with SVO, Conscientiousness, CasehubSlot vocabularies
+- A2A Agent Card serialisation (extensions + metadata, vocabulary URIs)
+- Basic Flyway migration for `agent_descriptor` table
+
+*Deliverable: devtown and claudony can register agents and fetch descriptors.*
+
+### Phase 2 — Discovery + Health (day 3–5)
+
+Make the registry useful for routing decisions.
+
+- `CapabilityHealth` SPI + sealed `CapabilityStatus` type
+- `DefaultCapabilityHealth` implementation — checks epistemicDomains, rate limit headroom, context availability
+- Discovery queries: findBySlot, findByCapability, findByDisposition, findByTrustThreshold
+- Cross-vocabulary discovery via `VocabularyRegistry.equivalentValues()`
+- casehub-engine integration — `CapabilityHealth.probe()` wired into dispatch flow after `TrustGateService`
+- CapabilityHealth probe results logged to casehub-ledger for operability failure observability
+
+*Deliverable: casehub-engine can route to the right agent, accounting for trust, health, and epistemic domain.*
+
+### Phase 3 — Generation (day 5–7)
+
+Turn descriptors into runnable agent instructions.
+
+- `SystemPromptRenderer` SPI + `RenderContext` record in `casehub-platform-api`
+- `ClaudeMarkdownRenderer` — `@DefaultBean`, Qute template for structure
+- LLM prose call for disposition section — lightweight call at registration time
+- Goal injection from `CaseDefinition.Goal`
+- Rendered prompt cache keyed by `(descriptorHash + contextHash)`
+- `RenderedPrompt` storage in AgentX (text + metadata + rendering timestamp)
+- `RenderFormat` enum: `CLAUDE_MD`, `OPENAI_SYSTEM`, `A2A_CARD`, `GEMINI`
+
+*Deliverable: given a case goal and a descriptor, get a CLAUDE.md section back.*
+
+### Phase 4 — Learning Layer (following week)
+
+Close the feedback loop.
+
+- `DescriptorOutcome` entity — links descriptor config + task type + attestation result
+- `AgentKnowledgeGraph` service — query: which configurations work for which task types
+- Descriptor recommendation: given a task type, suggest descriptor configurations with track record
+- Dashboard / query API for human-readable insight
+
+*Deliverable: the system learns which agent configurations work for which task types.*
 
 ---
 
 ## Open Questions
 
 **Architecture:**
-- What is the right permanent name? AgentX is a working name.
-- Which module within AgentX owns `ClaudeMarkdownRenderer`? Separate `agentx-claude` module for opt-in?
-- How does the knowledge graph store `(descriptor, task, outcome)` tuples? JPA? Separate module?
+- Permanent name for AgentX?
+- Does `ClaudeMarkdownRenderer` live in `agentx/runtime` or a separate `casehub-agentx-claude` opt-in module?
+- Which LLM generates the disposition prose? Platform-configured or descriptor-specified?
 
 **Descriptor design:**
-- How does `AgentDescriptor.agentId` relate to `actorId` in casehub-ledger? Same value? Derived from it?
-- Should `jurisdiction` + `dataHandlingPolicy` be part of the descriptor or a separate compliance supplement?
-- How many capability entries before the descriptor becomes unwieldy?
+- Should `jurisdiction` + `dataHandlingPolicy` be on `AgentDescriptor` directly, or a separate compliance supplement parallel to `ComplianceSupplement` in the ledger?
+- How many capability entries before the descriptor becomes unwieldy? Is there a max?
+- Should `epistemicDomains` values be expressed as confidence floats (0–1) or as a richer type?
 
-**Rendering:**
-- Which LLM generates the disposition prose? Platform-configured or descriptor-specified?
-- What is the rendering unit — full CLAUDE.md or a structured section to be included?
-- How does `situationalContext` (e.g. `"coaching interns"`) get supplied — from the Case, from the deployer, from the agent?
-
-**Evidence loop:**
-- What outcome signals feed the knowledge graph? Attestation verdicts only? Quantitative metrics (PR merge rate, cycle time)?
-- How many `(descriptor config, task type)` observations before the graph can recommend configurations?
-- Does the knowledge graph live in AgentX or is it a separate analytical layer?
+**Vocabulary system:**
+- How does vocabulary versioning work? If `svo/v1` terms change, do all descriptors using it need re-registration?
+- Should vocabulary terms support `broaderMatch` / `narrowerMatch` (SKOS-like) in addition to `exactMatch`?
+- Who can publish a vocabulary? Is the registry open or governed?
 
 **Discovery:**
-- What query model? Tag matching (simple), SPARQL (powerful, heavy), natural language + embedding similarity (flexible)?
-- How does AgentX registry relate to A2A Agent Card registries? Federated? Separate?
+- Query model: simple field match (Phase 1–2), then embedding similarity for semantic queries (Phase 4+)?
+- How does AgentX registry relate to A2A Agent Card registries at `/.well-known/`? Separate concerns or federated?
+
+**Evidence loop:**
+- What outcome signals feed the knowledge graph? Attestation verdicts + quantitative metrics (PR merge rate, cycle time)?
+- Staleness policy for CapabilityHealth cache: `fail-closed` (reject if stale) vs `fail-open` (use last known) vs `deferred-audit`?
+
+**Anti-gaming:**
+- Sybil attacks (synthetic agent networks rating each other) — open for everyone in this space
+- Trust-building-then-exploit — addressed by casehub-ledger's key rotation + SUSPECT detection at the identity layer; collusion between real agents is still open
 
 ---
 
 ## What's Left to Research
 
-- [x] Feature vs. capability distinction — done. Two-layer architecture: static `AgentDescriptor` + dynamic `CapabilityHealth` SPI. `epistemicDomains` added to capability layer. New MAST failure class identified.
-- [x] A2A Agent Card extensibility — done. Fully compatible via extensions[] + metadata maps. JWS signatures cover metadata. Discussion #1631 is the contribution target.
-- [ ] A2A Discussion #741 — registry/federation; where AgentX registry plugs in
-- [ ] OIDC-A delegation chains — how trust propagates when agent A delegates to agent B
-- [ ] WoT Thing Description Directory — most mature discovery implementation; SPARQL query model
-- [ ] MAST-Data dataset (1,642 traces) — potential validation for whether typed role/disposition reduces FC2 failure rates
-- [ ] Risk appetite formalisation — any standard vocabulary emerging?
+- [x] LDP (arXiv:2603.08852) — schema documented; quality hints designer-assigned; weightsFingerprint = agentConfigHash; unverified hints harmful
+- [x] MAST (arXiv:2503.13657) — 36.9% inter-agent misalignment; FM-2.6 (13.2%) = reasoning-action mismatch; no operability failure mode
+- [x] Disposition thread — SVO replaces D&D; consistency weak; attestation essential; Nature MI 2025
+- [x] Feature vs. capability — two-layer: static descriptor + dynamic CapabilityHealth; epistemicDomains; new MAST failure class
+- [x] A2A extensibility — fully compatible; extensions[] + metadata + extended card; JWS covers metadata; Discussion #1631 is contribution target
+- [ ] A2A Discussion #741 — registry/federation; where AgentX registry plugs in to the A2A ecosystem
+- [ ] OIDC-A delegation chains — trust propagation when agent A delegates to agent B
+- [ ] WoT Thing Description Directory — most mature discovery; SPARQL query model worth understanding for Phase 2+
+- [ ] Risk appetite formalisation — any emerging vocabulary from behavioural economics / RL?
