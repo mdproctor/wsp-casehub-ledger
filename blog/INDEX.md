@@ -33,3 +33,4 @@
 | [2026-05-22-mdp02-the-silent-rule.md](2026-05-22-mdp02-the-silent-rule.md) | 2026-05-22 | ArchUnit parity enforcement — the vacuous pass gotcha and why convention-only rules fail silently |
 | [2026-05-22-mdp03-giving-agents-a-form.md](2026-05-22-mdp03-giving-agents-a-form.md) | 2026-05-22 | Cross-domain research finds nobody has structured agent description — LDP, MAST, SVO, the Maven collision that killed Archetype, and the birth of casehub-eidos |
 | [2026-05-23-mdp01-the-missing-pem-loader.md](2026-05-23-mdp01-the-missing-pem-loader.md) | 2026-05-23 | Won't-do evaluation on platform-api migration; ArchUnit dead branch; PQC signing — LedgerPemUtil gap caught in review |
+| [2026-05-23-mdp02-persistence-layer-didnt-know.md](2026-05-23-mdp02-persistence-layer-didnt-know.md) | 2026-05-23 | In-memory persistence module: fixing EntityManager coupling in service layer, CDI proxy field access, bytecode enhancement surprises |
