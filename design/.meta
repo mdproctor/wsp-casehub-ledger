@@ -1,0 +1,8 @@
+branch: issue-091-persistence-memory
+project-sha: 8563632dd7221f3016de68a27d1cb3fffd2d5e2f
+date: 2026-05-23
+issue: 91
+issue-repo: casehubio/ledger
+flyway-next-v: none
+design-repo: workspace
+design-section-hashes: 
