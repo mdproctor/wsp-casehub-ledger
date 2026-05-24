@@ -1,45 +1,46 @@
 # CaseHub Ledger — Session Handover
-**Date:** 2026-05-23
+**Date:** 2026-05-24
 
 ## Current State
 
-452 tests, BUILD SUCCESS. Both ledger repos on `main`, pushed to `mdproctor/ledger`
-and `casehubio/ledger`. 4 open issues remain.
+497 tests, BUILD SUCCESS. Both ledger repos on `main`, pushed to `mdproctor/ledger`
+and `casehubio/ledger`. 3 open issues remain.
 
 ## What Landed This Session
 
-- **#90** — Closed won't-do: moving `LedgerTraceIdProvider` to `platform-api` reduces
-  one import but changes nothing about the classpath; the coupling was never what it looked like.
-- **#97** — `checkUniTypeArg()` in `haveBidirectionalMethodParity()`: verifies `Uni<T>`
-  type argument erasure matches blocking return type. 2 synthetic meta-tests.
-- **#84** — Algorithm-transparent signing: `AgentSignatureEnricher`, `AgentCryptographicVerifier`,
-  `LedgerMerklePublisher`, `LedgerPemUtil` no longer hardcode `"Ed25519"`. ADR 0013.
-  Code review caught `LedgerPemUtil` — without that fix, the ADR's "no code changes at adoption
-  time" claim was false.
+- **#91** — `casehub-ledger-memory`: 6 `@Alternative @Priority(1)` in-memory stores
+  (entries, attestations, trust scores, key rotation, Merkle frontier) + reactive delegates
+  gated by `@IfBuildProperty`. Runtime refactors: `LedgerEnricherPipeline` CDI bean
+  extracted from `LedgerTraceListener`; `LedgerMerkleFrontierRepository` SPI extracted
+  — `LedgerVerificationService` no longer injects `EntityManager`. Hot fix after close:
+  `NoOpLedgerMerkleFrontierRepository @DefaultBean` added — consumers (Claudony) were
+  failing with `UnsatisfiedResolutionException` because `JpaLedgerMerkleFrontierRepository`
+  is `@Alternative` and the injection point had no fallback.
 
-Garden: GE-20260523-7fcea7 (ArchUnit isEmpty() dead code), GE-20260523-0ecc24 (JCA trial-load
-technique), GE-20260523-722840 (ArchUnit meta-test with evaluate().hasViolation()).
-Protocol: PP-20260523-e7b577 (ledger-algorithm-transparent-signing).
-Blog: `blog/2026-05-23-mdp01-the-missing-pem-loader.md`
+Garden: GE-20260523-de55e8 (CDI proxy field access), GE-20260523-fc1fe7 (Quarkus bytecode
+enhancement makes @Entity fields protected in test classloader).
+Blog: `blog/2026-05-23-mdp02-persistence-layer-didnt-know.md`
 
 ## Immediate Next Step
 
-Pick up one of the 4 remaining open issues. Run `work-start` from `main`.
+Pick up one of the 3 remaining open issues. Run `work-start` from `main`.
+
+## What's Left
+
+- `casehubio/parent#62` — ledger deep-dive SPIs table needs `LedgerMerkleFrontierRepository`
+  row and `persistence-memory/` module entry · XS · Low
 
 ## What's Next
 
 | # | Description | Scale | Complexity | Notes |
 |---|-------------|-------|------------|-------|
-| #91 | `persistence-memory/` module — in-memory repo impls, zero-config ephemeral install | M | Med | Store SPI pattern; needed by eidos too |
-| #90 | Evaluate `LedgerTraceIdProvider` → platform-api | — | — | Closed won't-do this session |
 | #85 | External key distribution (TUF/HSM/PKI) for `AgentKeyProvider` | L | High | PQC foundation done; this is the next signing layer |
 | #81 | Agent DID/VC cryptographic identity binding | L | High | Depends on #85 implicitly |
-| #96 | Code-gen for reactive tier (Vert.x codegen style) | XL | High | Not yet: pair count (2) is too small |
+| #96 | Code-gen for reactive tier (Vert.x codegen style) | XL | High | Not yet: pair count too small |
 
 ## References
 
 | What | Path |
 |------|------|
-| Latest blog | `blog/2026-05-23-mdp01-the-missing-pem-loader.md` |
-| ADR 0013 | `docs/adr/0013-post-quantum-signing-migration.md` |
+| Latest blog | `blog/2026-05-23-mdp02-persistence-layer-didnt-know.md` |
 | Previous handover | `git show HEAD~1:HANDOFF.md` |
