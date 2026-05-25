@@ -2,6 +2,7 @@
 
 | File | Date | Title |
 |------|------|-------|
+| [2026-05-25-mdp01-factory-nobody-called.md](2026-05-25-mdp01-factory-nobody-called.md) | 2026-05-25 | TestEntryFactory — CDI test factory written for a classloader problem that MemoryTestEntry.of() had already solved; confirmed dead, removed |
 | [2026-05-22-mdp01-actor-type-finds-its-home.md](2026-05-22-mdp01-actor-type-finds-its-home.md) | 2026-05-22 | ActorType migrated from casehub-ledger-api to casehub-platform-api — same-package implicit resolution trap, 57-file import sweep, CurrentPrincipal.actorType() unblocked |
 | [2026-05-21-mdp03-the-step-that-kept-skipping.md](2026-05-21-mdp03-the-step-that-kept-skipping.md) | 2026-05-21 | work-end skill audit — six publish-blog bypass vectors found and fixed, 30 missing blog entries backfilled across all branches |
 | [2026-04-29-mdp01-what-the-reviews-missed.md](2026-04-29-mdp01-what-the-reviews-missed.md) | 2026-04-29 | Prerequisites #67/#68 and Group A #55/#54/#53 shipped. NULLS NOT DISTINCT rendered the sentinel workaround obsolete. Valence multiplier in decay. Important review findings silently dismissed by the controller — and what to do about it. |
