@@ -1,0 +1,8 @@
+branch: issue-081-agent-did-vc-identity
+project-sha: 3c2ea41540a241898be8edc0a7348c0a96742d94
+date: 2026-05-29
+issue: 81
+issue-repo: casehubio/ledger
+flyway-next-v: 1008
+design-repo: project
+design-section-hashes:
