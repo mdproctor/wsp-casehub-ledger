@@ -1,0 +1,8 @@
+branch: issue-85-agent-key-dist
+project-sha: 7bd23faf00437411969f62af920f72e23a606b8d
+date: 2026-05-29
+issue: 85
+issue-repo: casehubio/ledger
+flyway-next-v: none
+design-repo: workspace
+design-section-hashes: 
