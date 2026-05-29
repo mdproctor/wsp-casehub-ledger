@@ -3,7 +3,7 @@
 **Issue:** casehubio/ledger#85  
 **Branch:** issue-85-agent-key-dist  
 **Date:** 2026-05-29  
-**Status:** Approved
+**Status:** Approved (rev 2 — post-review)
 
 ---
 
@@ -14,10 +14,15 @@ incompatible with:
 
 - **Vault Transit / Cloud KMS** — private key never leaves the KMS; signing happens via API call
 - **HSM via non-JCA API** — hardware signing requires a remote call, not local `Signature.getInstance()`
-- **Hot key rotation** — PEM-based provider requires restart to pick up new keys
+- **Restart-free key refresh** — PEM-based provider requires restart to pick up rotated keys
 
 The current SPI (`AgentKeyProvider.signingKey(actorId) → Optional<SigningKey>`) assumes the
 caller will do local JCA signing. This assumption breaks for remote-signing models.
+
+**What this PR delivers on key refresh:** `AbstractCachingAgentSigner` exposes an
+`invalidate(actorId)` hook that subclasses call from a scheduled job — giving bounded-staleness
+refresh (up to the configured interval). Event-driven invalidation on rotation (true hot swap,
+zero staleness) is tracked separately in #103.
 
 ---
 
@@ -39,7 +44,6 @@ possible without any workaround.
 ### `AgentSigner` (replaces `AgentKeyProvider`)
 
 ```java
-@FunctionalInterface
 public interface AgentSigner {
     /**
      * Signs {@code data} on behalf of {@code actorId} and returns the complete signature
@@ -62,10 +66,10 @@ public interface AgentSigner {
      *
      * <p><strong>JCA / PKCS#11 HSMs:</strong> hardware security modules that expose a JCA
      * {@code Provider} return a {@code PrivateKey} that proxies signing operations into the
-     * hardware. Load the key pair via {@code KeyStore.getInstance("PKCS11")}, extend
+     * hardware without exporting key material. Load the key pair via
+     * {@code KeyStore.getInstance("PKCS11")}, extend
      * {@link AbstractCachingAgentSigner}&lt;KeyPair&gt;, and call
-     * {@link AgentSignature#sign(KeyPair, byte[])}. JCA routes the signing call into the
-     * hardware without exporting key material.
+     * {@link AgentSignature#signWith(KeyPair, byte[])}.
      *
      * <p><strong>Algorithm transparency:</strong> implementations must not hardcode a
      * cryptographic algorithm string. See protocol PP-20260523-e7b577.
@@ -78,32 +82,60 @@ public interface AgentSigner {
 }
 ```
 
+`@FunctionalInterface` is intentionally absent. `AgentSigner` has one abstract method and
+supports lambda construction in tests (SAM interface — no annotation required). Omitting the
+annotation leaves room for `default` methods in future and avoids implying that lambda
+construction is the intended production pattern.
+
 ### `AgentSignature` (replaces `SigningKey` in public API)
 
 ```java
 public record AgentSignature(byte[] signature, byte[] publicKey, String keyRef) {
+
+    // Defensive copies — callers and implementations cannot mutate fields after construction.
+    public AgentSignature {
+        signature = signature.clone();
+        publicKey = publicKey.clone();
+    }
+
     /**
      * Algorithm-transparent local signing factory.
      *
-     * Derives the signing algorithm from {@code keyPair.getPrivate().getAlgorithm()}.
-     * Computes {@code keyRef = Base64URL(SHA-256(publicKey.getEncoded()))}.
+     * Derives the signing algorithm from {@code keyPair.getPrivate().getAlgorithm()} —
+     * no hardcoded algorithm string. Computes
+     * {@code keyRef = Base64URL(SHA-256(publicKey.getEncoded()))}.
      *
      * Used by {@code ConfiguredAgentSigner} and test lambdas.
      */
-    public static AgentSignature sign(KeyPair keyPair, byte[] data) { ... }
+    public static AgentSignature signWith(KeyPair keyPair, byte[] data) { ... }
 }
 ```
 
-`signature` — raw JCA signature bytes (or raw bytes from remote KMS, stripped of any
-provider-specific prefix).  
-`publicKey` — X.509 DER-encoded public key bytes. Embeds the algorithm OID; drives
-algorithm detection in `AgentCryptographicVerifier`. Unchanged from current `agentPublicKey`
-column semantics.  
+`signature` — raw bytes. For JCA local signing: `Signature.sign()` output. For Vault Transit:
+base64-decoded payload after stripping the `vault:v1:` prefix. Must be standard format for the
+algorithm (ed25519: 64 raw bytes; ECDSA: ASN.1 DER; RSA: raw PKCS#1).  
+`publicKey` — X.509 DER-encoded. Embeds the algorithm OID; drives algorithm detection in
+`AgentCryptographicVerifier`. Unchanged from current `agentPublicKey` column semantics.  
 `keyRef` — `Base64URL(SHA-256(publicKey))`. Unchanged from current `agentKeyRef` semantics.
 
 ---
 
 ## Changes to Existing Runtime Classes
+
+### `LedgerPemUtil` — new public method
+
+`LedgerPemUtil` is currently package-private. The Vault Transit example needs to parse a PEM
+public key from a string (not a file path). Add one public method:
+
+```java
+// New — parses a PEM-encoded public key from a string (e.g. a Vault Transit API response).
+// Trial-loads through SUPPORTED_ALGORITHMS, same as loadPublicKey(String pemPath).
+public static PublicKey parsePublicKey(String pemContent) throws Exception { ... }
+```
+
+`loadPublicKey(String pemPath)` (file path variant) stays unchanged and package-private.
+`decodePem(String pem, String type)` stays package-private.
+No other visibility changes to `LedgerPemUtil`.
 
 ### `AgentSignatureEnricher`
 
@@ -124,50 +156,77 @@ Exception handling stays the same — `try/catch` around the whole block, non-fa
 
 - `@DefaultBean @ApplicationScoped`
 - Direct implementation of `AgentSigner` — does NOT extend `AbstractCachingAgentSigner`
-- Eager `@PostConstruct` loading: parses all PEM files at startup, logs errors for failed
-  actors. Startup failure visibility is an operational property worth keeping.
-- Signs locally via `AgentSignature.sign(keyPair, data)` — algorithm-transparent
-- `SigningKey` becomes a private implementation detail (or removed; logic inlined)
+- Eager `@PostConstruct` loading: parses all PEM files at startup, logs errors for failed actors
+- Preserves the `failedActors` sentinel from `ConfiguredAgentKeyProvider`: actors whose key
+  failed to load at startup are tracked in `Set<String> failedActors`. `sign()` logs a single
+  warning at startup for each failed actor and returns `Optional.empty()` on subsequent calls
+  — no per-call logging storm for misconfigured actors.
+- Signs locally via `AgentSignature.signWith(keyPair, data)` — algorithm-transparent
+- `SigningKey` deleted; `KeyPair` cached directly in `Map<String, KeyPair>`
 
 ### Deleted
 
 - `AgentKeyProvider` — deleted
-- `SigningKey` — deleted or made private to `ConfiguredAgentSigner`
+- `SigningKey` — deleted
 
 ---
 
 ## New Runtime Class: `AbstractCachingAgentSigner<C>`
 
-Abstract base for external key providers that have per-call overhead (network, hardware).
+Abstract base for external providers that have per-call overhead (network, hardware).
 
 ```
 C = per-actorId context type
-    For extractable-key providers (TUF, Vault KV): C = KeyPair
-    For remote-signing providers (Vault Transit): C = VaultTransitContext(pubKey, keyRef, keyName)
+    Extractable-key providers (TUF, Vault KV): C = KeyPair
+    Remote-signing providers (Vault Transit):  C = VaultTransitContext(pubKey, keyRef, keyName)
 ```
 
-**Cache semantics:**
-- Cache is `ConcurrentHashMap<String, Optional<C>>` — `Optional.empty()` is the "not configured"
-  sentinel, preventing repeated `loadContext` calls for unknown actors
-- `loadContext` returning `null` → cached as `Optional.empty()`
-- `loadContext` throwing → NOT cached; next call retries (transient failure path)
-- Concurrent load race: `putIfAbsent` pattern; duplicate loads are idempotent
-
-**Template methods:**
+**`loadContext` signature:**
 
 ```java
-// Returns null if actorId is not configured for signing.
-// Throws RuntimeException for transient failures (network, auth).
-protected abstract C loadContext(String actorId);
+/**
+ * Loads the signing context for {@code actorId}.
+ *
+ * Return {@link Optional#empty()} if this actorId is not configured for signing —
+ * the result is cached and no further calls are made for this actor.
+ *
+ * Throw {@link RuntimeException} for transient failures (network, auth) —
+ * the failure is NOT cached; the next {@code sign()} call retries.
+ */
+protected abstract Optional<C> loadContext(String actorId);
+```
 
-// Called only when context is present. Must not cache the signing result.
+Returning `Optional<C>` (not `null`) makes the "not configured" vs "transient error"
+distinction explicit at the type level. A `null` return would be ambiguous.
+
+**Cache semantics:**
+
+The cache is `ConcurrentHashMap<String, Optional<C>>`:
+- `map.get(actorId) == null` → not yet loaded; `loadContext` will be called
+- `map.get(actorId) == Optional.empty()` → loaded, actor not configured; no further attempts
+- `map.get(actorId).isPresent()` → loaded, actor has context; use it directly
+
+Load failure (throw from `loadContext`) is not cached — the entry stays absent from the map so
+the next call retries.
+
+**Concurrent load trade-off:** the implementation uses `putIfAbsent`, not
+`computeIfAbsent`. Two threads hitting the same unconfigured actor simultaneously both call
+`loadContext` — for a Vault HTTP call that is two network round-trips. `computeIfAbsent` would
+prevent the duplicate, but it blocks the map bucket for the duration of the compute function
+and has reentrancy constraints that make it unsafe with slow external calls. The duplicate-load
+cost on cold start (typically one round-trip per actor, bounded by actor count) is preferable
+to the bucket-blocking risk.
+
+**Template method:**
+
+```java
 protected abstract AgentSignature performSign(String actorId, C context, byte[] data);
 ```
 
-**Cache management hooks (subclasses call from `@Scheduled` or event observers):**
+**Cache management hooks (subclasses call from `@Scheduled` or rotation event observers):**
 
 ```java
-protected void invalidateAll()               // full cache clear
+protected void invalidateAll()               // full cache clear — triggers reload on next sign()
 protected void invalidate(String actorId)    // single-actor eviction
 ```
 
@@ -182,7 +241,7 @@ Standalone Maven module (same structure as `examples/order-processing/`).
 ### What it demonstrates
 
 Remote signing via Vault Transit Secrets Engine: private key never leaves Vault.
-Signing is performed by a Vault API call; the application holds only the public key.
+Signing happens via a Vault API call; the application holds only the public key.
 
 ### `VaultTransitAgentSigner`
 
@@ -195,27 +254,37 @@ public class VaultTransitAgentSigner extends AbstractCachingAgentSigner<VaultTra
 
 `VaultTransitContext` (private record): `vaultKeyName`, `publicKey` (bytes), `keyRef`.
 
-**`loadContext(actorId)`:**
-1. Resolve Vault key name from config mapping (`casehub.ledger.vault-transit.key-mapping."<actorId>"`)
+**`loadContext(actorId)` — returns `Optional<C>`:**
+1. Look up Vault key name from config mapping (`casehub.ledger.vault-transit.key-mapping."<actorId>"`)
+   — return `Optional.empty()` immediately if actorId not in config (not configured, do not contact Vault)
 2. `GET /v1/transit/keys/<key-name>` with `X-Vault-Token`
-3. Parse public key from response (PEM → X.509 bytes via `LedgerPemUtil`)
-4. Compute `keyRef`
-5. Return `VaultTransitContext`
+3. Parse public key from JSON response using `LedgerPemUtil.parsePublicKey(String)` (new public method)
+4. Compute `keyRef = Base64URL(SHA-256(publicKey.getEncoded()))`
+5. Return `Optional.of(new VaultTransitContext(keyName, pubKey.getEncoded(), keyRef))`
 
 **`performSign(actorId, ctx, data)`:**
-1. `POST /v1/transit/sign/<key-name>` with `{ "input": "<base64(data)>" }`
-2. Parse `data.signature` from response; strip `vault:v1:` prefix; decode base64
-3. Return `AgentSignature(rawBytes, ctx.publicKey(), ctx.keyRef())`
+1. `POST /v1/transit/sign/<key-name>` body `{ "input": "<base64(data)>" }`
+2. Parse `data.signature` from JSON response
+3. Strip `vault:v1:` prefix; decode base64 → raw signature bytes
+4. Return `new AgentSignature(rawBytes, ctx.publicKey(), ctx.keyRef())`
 
-**Algorithm transparency:** Vault's key type (ed25519, ecdsa-p256, rsa-2048) determines the
-algorithm. The stored `publicKey` X.509 bytes carry the OID. `AgentCryptographicVerifier`
-detects the algorithm from those bytes — no algorithm string appears in the signer.
+**Signature format note:** Vault Transit ed25519 signatures are 64 raw bytes after base64
+decode. Vault Transit ECDSA (ecdsa-p256) signatures are ASN.1 DER-encoded — the same format
+JCA's `Signature.verify()` expects for ECDSA, so no conversion is needed. Future adapters for
+ECDSA keys work without format translation.
+
+**Algorithm transparency:** The Vault key type (ed25519, ecdsa-p256, rsa-2048) is encoded in
+the public key's X.509 OID bytes stored on the ledger entry. `AgentCryptographicVerifier`
+detects the algorithm from those bytes. No algorithm string appears in `VaultTransitAgentSigner`.
 
 **Scheduled cache refresh:**
 ```java
 @Scheduled(every = "${casehub.ledger.vault-transit.refresh-interval:5m}")
 void refresh() { invalidateAll(); }
 ```
+
+This gives bounded-staleness refresh — new keys take effect within the interval. For
+zero-latency rotation see #103.
 
 **HTTP client:** `java.net.http.HttpClient` — no Vault Java SDK dependency.
 
@@ -234,6 +303,7 @@ WireMock stubs the Vault HTTP API (test scope, no real Vault):
 - Happy path: sign returns expected bytes; public key loaded from key info response
 - Cache hit: second `sign()` issues only one `GET /v1/transit/keys/...`
 - `invalidateAll()`: next `sign()` re-fetches (second GET issued)
+- actorId not in config: returns `Optional.empty()` without contacting Vault
 - Vault 403: `loadContext` throws; enricher swallows; entry unsigned
 - Vault 500: `loadContext` throws; not cached; retry succeeds on second call
 
@@ -243,44 +313,64 @@ WireMock stubs the Vault HTTP API (test scope, no real Vault):
 
 ### `AgentSignatureEnricherTest`
 
-Lambda construction changes from `actorId -> Optional.of(SigningKey.of(kp))` to:
+Lambda construction changes (SAM, no annotation required):
 ```java
-(actorId, data) -> Optional.of(AgentSignature.sign(testKeyPair, data))
+// was: actorId -> Optional.of(SigningKey.of(kp))
+(actorId, data) -> Optional.of(AgentSignature.signWith(testKeyPair, data))
 ```
 Test assertions unchanged.
 
-`signatureVerifiesAgainstStoredPublicKey` — verification using JCA `Signature.getInstance()`
-stays; the test explicitly confirms the SPI contract produces a verifiable signature.
+`signatureVerifiesAgainstStoredPublicKey` — JCA verification using `Signature.getInstance()`
+stays; it explicitly confirms the SPI contract produces a verifiable signature.
 
 ### `AgentSigningIT`
 
 ```java
 @InjectMock AgentSigner agentSigner;  // was AgentKeyProvider
 
+// Catch-all first, specific override second — simpler than argThat ordering
+when(agentSigner.sign(anyString(), any())).thenReturn(Optional.empty());
 when(agentSigner.sign(eq("claude:reviewer@v1"), any()))
-    .thenAnswer(inv -> Optional.of(AgentSignature.sign(testKeyPair, inv.getArgument(1))));
-when(agentSigner.sign(argThat(id -> !"claude:reviewer@v1".equals(id)), any()))
-    .thenReturn(Optional.empty());
+    .thenAnswer(inv -> Optional.of(AgentSignature.signWith(testKeyPair, inv.getArgument(1))));
 ```
+
+### `AgentSignatureVerificationServiceIT`
+
+Heavy user of `SigningKey`. All `SigningKey.of(kp)` calls replaced:
+- `SigningKey.of(kp).keyRef()` → inline computation: `Base64.getUrlEncoder().withoutPadding().encodeToString(MessageDigest.getInstance("SHA-256").digest(kp.getPublic().getEncoded()))`. Or extract to a test helper `keyRef(KeyPair)`.
+- `SigningKey sk = SigningKey.of(...)` → replaced with `KeyPair` directly; use `AgentSignature.signWith()` where signing is needed; compute `keyRef` inline or via helper.
+
+No mock of `AgentKeyProvider` in this test — verification reads from stored entry fields, not from the signer SPI. No `@InjectMock` changes needed here.
+
+### `ReactiveAgentSignatureVerificationServiceIT`
+
+- `@InjectMock AgentKeyProvider agentKeyProvider` → `@InjectMock AgentSigner agentSigner`
+- Same `SigningKey` replacement pattern as above
 
 ### New: `AbstractCachingAgentSignerTest`
 
 Pure unit test with a `TestSigner extends AbstractCachingAgentSigner<String>`:
-- Cache hit verified via call count on `loadContext`
-- `Optional.empty()` returned and cached for unconfigured actors
-- Throw from `loadContext` not cached (retry path)
-- `invalidateAll()` forces reload
+- Cache hit: `loadContext` called once; `performSign` called twice for same actorId
+- `Optional.empty()` returned and cached for unconfigured actors (null from `loadContext`)
+- Throw from `loadContext` not cached (retry path): second call re-invokes `loadContext`
+- `invalidateAll()` forces `loadContext` to be called again on next `sign()`
+- `invalidate(actorId)` evicts only that actor; others remain cached
 
 ---
 
 ## ADR
 
-New ADR supersedes ADR 0011 (per-actorId key model). Records:
-- Why signing belongs in the SPI (remote-signing models require it)
-- Why `AgentKeyProvider` → `AgentSigner` is the right break
+New ADR extends (does not supersede) ADR 0011. ADR 0011's per-actorId key model is correct
+and unchanged — the new ADR replaces the SPI contract that implements it. Records:
+
+- Why signing belongs in the SPI (remote-signing models require it; `AgentKeyProvider`'s
+  `KeyPair` return type assumes local JCA signing)
+- Why `AgentKeyProvider` → `AgentSigner` is the minimal correct break
 - The two-tier structure: `ConfiguredAgentSigner` (eager, direct) vs `AbstractCachingAgentSigner<C>` (lazy, cached)
+- `loadContext() → Optional<C>` semantics vs null convention — explicit type-level contract
 - Vault Transit as the reference implementation for the remote-signing pattern
-- Deferred: Cloud KMS adapters (#102), rotation-triggered invalidation (#103), InMemoryAgentSigner (#104)
+- Deferred: Cloud KMS adapters (#102), rotation-triggered invalidation (#103),
+  InMemoryAgentSigner (#104)
 
 ---
 
@@ -290,7 +380,7 @@ New ADR supersedes ADR 0011 (per-actorId key model). Records:
 |-------|-------------|
 | #101 | Vault AppRole / OIDC auth for `VaultTransitAgentSigner` |
 | #102 | Cloud KMS adapters (AWS KMS, GCP KMS, Azure Key Vault) |
-| #103 | Rotation-triggered cache invalidation via CDI event |
+| #103 | Rotation-triggered cache invalidation via CDI event (true hot swap) |
 | #104 | `InMemoryAgentSigner` in `persistence-memory/` |
 
 ---
@@ -298,7 +388,7 @@ New ADR supersedes ADR 0011 (per-actorId key model). Records:
 ## Platform Coherence Check
 
 - **SPI types:** `AgentSigner` uses only `byte[]` and `String` — no SDK types in contract. ✅
-- **Algorithm transparency:** protocol PP-20260523-e7b577 — no hardcoded algorithm strings anywhere. `AgentSignature.sign()` derives from key; `AgentCryptographicVerifier` detects from X.509 bytes. ✅
+- **Algorithm transparency:** protocol PP-20260523-e7b577 — no hardcoded algorithm strings. `AgentSignature.signWith()` derives from key; `AgentCryptographicVerifier` detects from X.509 bytes; `VaultTransitAgentSigner` stores raw bytes with no algorithm assumption. ✅
 - **CDI pattern:** `ConfiguredAgentSigner @DefaultBean`; external providers `@Alternative @Priority(1)` — Pattern B from `alternative-extension-patterns.md`. ✅
 - **Example module structure:** follows existing `examples/` conventions (standalone Quarkus app, own pom, WireMock for I/O). ✅
 - **No platform-level doc update needed:** this is entirely within `casehub-ledger`'s existing ownership of agent signing. ✅
