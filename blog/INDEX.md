@@ -2,6 +2,7 @@
 
 | File | Date | Title |
 |------|------|-------|
+| [2026-05-29-mdp01-signing-doesnt-belong-in-the-enricher.md](2026-05-29-mdp01-signing-doesnt-belong-in-the-enricher.md) | 2026-05-29 | AgentKeyProvider → AgentSigner: signing boundary moves into the SPI to support Vault Transit and Cloud KMS; AbstractCachingAgentSigner putIfAbsent design; 463 tests green |
 | [2026-05-25-mdp01-factory-nobody-called.md](2026-05-25-mdp01-factory-nobody-called.md) | 2026-05-25 | TestEntryFactory — CDI test factory written for a classloader problem that MemoryTestEntry.of() had already solved; confirmed dead, removed |
 | [2026-05-22-mdp01-actor-type-finds-its-home.md](2026-05-22-mdp01-actor-type-finds-its-home.md) | 2026-05-22 | ActorType migrated from casehub-ledger-api to casehub-platform-api — same-package implicit resolution trap, 57-file import sweep, CurrentPrincipal.actorType() unblocked |
 | [2026-05-21-mdp03-the-step-that-kept-skipping.md](2026-05-21-mdp03-the-step-that-kept-skipping.md) | 2026-05-21 | work-end skill audit — six publish-blog bypass vectors found and fixed, 30 missing blog entries backfilled across all branches |
