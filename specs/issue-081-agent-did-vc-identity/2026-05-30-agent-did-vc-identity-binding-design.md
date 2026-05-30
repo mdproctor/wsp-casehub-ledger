@@ -127,10 +127,32 @@ record CacheEntry<C>(Optional<C> value, Instant expiresAt) {
 ```
 
 - `ConcurrentHashMap<String, CacheEntry<C>>` — per-key TTL-capable cache
-- `putIfAbsent` not `computeIfAbsent` (avoids bucket locking under contention)
 - `loadContext(key)` template method: empty = not configured (cached); throw = transient (not cached)
 - `invalidate(key)` / `invalidateAll()` hooks
 - Configurable TTL; default varies by use (see below)
+
+**TTL eviction algorithm** — `putIfAbsent` alone is insufficient for expired-entry replacement.
+When a key is present but expired, `putIfAbsent` is a no-op (the key exists). The correct
+eviction path uses atomic conditional remove:
+
+```
+// On each cache lookup for 'key':
+CacheEntry<C> existing = cache.get(key);
+if (existing != null && existing.isExpired()) {
+    cache.remove(key, existing);   // atomic: only removes if value == existing (no lost updates)
+    existing = null;               // fall through to miss path
+}
+if (existing == null) {
+    Optional<C> loaded = loadContext(key);   // template method
+    CacheEntry<C> fresh = new CacheEntry<>(loaded, Instant.now().plus(ttl));
+    cache.putIfAbsent(key, fresh);           // safe: two threads racing → first wins, both correct
+    existing = cache.get(key);               // read back the winner
+}
+return existing.value();
+```
+
+`AbstractCachingIdentityProviderTest` must include a clock-advancing TTL expiry test that
+verifies re-resolution occurs after expiry and that the expired entry is not returned.
 
 **DID document cache TTL:** configurable, default 5 minutes. Write-path and read-path
 caches are independent instances with the same TTL.
@@ -159,7 +181,7 @@ from `getClass().getAnnotation()`):
 // LedgerEnricherPipeline.enrich() — updated
 enrichers.handles()
     .sorted(Comparator.comparingInt(h ->
-        (h.getBean() instanceof InjectableBean<?> ib) ? ib.getPriority() : 100))
+        (h.getBean() instanceof InjectableBean<?> ib) ? ib.getPriority() : Integer.MAX_VALUE))
     .map(Instance.Handle::get)
     .forEach(e -> {
         try { e.enrich(entry); }
@@ -167,6 +189,13 @@ enrichers.handles()
             e.getClass().getSimpleName(), ex.getMessage()); }
     });
 ```
+
+All CDI beans in Arc implement `InjectableBean`, so the `Integer.MAX_VALUE` fallback is dead
+code in practice. It is retained as a guard rather than removed, with an explicit value that
+correctly represents Arc's default priority (sorts last). **`@Priority` is mandatory on all
+`LedgerEntryEnricher` implementations** — add this to the `LedgerEntryEnricher` Javadoc.
+An enricher without `@Priority` sorts last (after all numbered enrichers) rather than at
+some arbitrary position.
 
 Assigned `@Priority` values (existing enrichers gain annotation with no behaviour change):
 
@@ -249,6 +278,19 @@ void enforceIdentity(Object entity) {
 
 This preserves the enricher's non-fatal contract and gives ENFORCE a well-defined,
 testable, JPA-lifecycle-level enforcement point.
+
+**ENFORCE is JPA-only.** `@EntityListeners` is a JPA lifecycle mechanism and does not fire
+in `InMemoryLedgerEntryRepository`. The in-memory repository must not implement ENFORCE
+mode — it is a test helper and should not block writes. Tests that need to verify ENFORCE
+behaviour must use a `@QuarkusTest` with JPA active (not the in-memory path).
+
+**No sequence gap on ENFORCE rollback.** In the JPA path, callers assign sequence numbers
+via `SELECT MAX(sequenceNumber) + 1 FROM ledger_entry WHERE subjectId = ?` inside the same
+`@Transactional` boundary as `save()`. When ENFORCE throws and the transaction rolls back,
+that computation is also rolled back — no committed sequence number is incremented, so
+`LedgerHealthJob`'s gap query (`COUNT != MAX - MIN + 1`) never observes a gap. ADR 0015
+must document this reasoning so future maintainers do not introduce a non-transactional
+sequence mechanism (which would break this invariant).
 
 ### Binding entry persistence — CDI async event observer
 
