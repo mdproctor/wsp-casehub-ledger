@@ -181,6 +181,7 @@ Unit tests (direct instantiation — no CDI context needed):
 - Inject `KeyRotationService` and `ActorDIDProvider`.
 - Seed cache, call `keyRotationService.recordRotation(actorId, ...)`, assert next `actorDIDProvider.didFor(actorId)` triggers a fresh WireMock call.
 - This verifies the full CDI event path: `KeyRotationService` → `AgentKeyRotatedEvent` → `ScimActorDIDProvider.onKeyRotated()`.
+- **Side-effect WireMock note:** When `ScimActorDIDProvider @Alternative` is active, `ActorDIDEnricher @Priority(40)` runs on every `ledgerRepo.save()`. `KeyRotationService.recordRotation()` calls `ledgerRepo.save(KeyRotationEntry)`, which triggers the enricher pipeline, which calls `ScimActorDIDProvider.didFor(actorId)`. The WireMock stub must handle this lookup (it fires before the cache is seeded and before the rotation completes). Account for this call in WireMock verify counts — the integration test will see at minimum: 1 call from the enricher during save, 1 call to seed the cache for the pre-rotation assert, and 1 call after invalidation to confirm the re-fetch.
 
 ---
 
