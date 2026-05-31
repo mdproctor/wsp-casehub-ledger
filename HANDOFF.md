@@ -19,21 +19,35 @@
 
 ## Immediate Next Step
 
-Clean main. Start next issue. Best picks (from backlog):
-- `#108` (JwtVCValidator — W3C VC JWT validation, M · Med) — deferred from #81
-- `#96` (reactive code-gen for reactive tier, XL · High) — largest remaining gap
-- `#101` / `#102` (Vault AppRole + Cloud KMS adapters, M · Med) — deferred from #85
+Clean main. Start next issue. Best picks:
+- `#111` — minor review findings (S · Low, fastest win)
+- `#112` — Phase 1 identity extraction (blocks on parent#133 existing first)
+- `#108` — JwtVCValidator (M · Med, but will move to casehub-identity in Phase 1 — do after #112)
+
+## Cross-Module
+
+**We're blocking:**
+- `casehubio/parent#133` — needs ledger to confirm extraction list before creating casehub-identity module
+
+**Blocked by:**
+- `casehubio/parent#133` — must publish casehub-identity before ledger#112 can land
+
+## What's Left
+
+- `#111` — minor review findings from #107 · S · Low
+- `#110` — ScimDIDResolver @Alternative — subsumed by identity extraction; likely becomes part of casehub-identity · M · Med
 
 ## What's Next
 
 | # | Description | Scale | Complexity | Notes |
 |---|-------------|-------|------------|-------|
-| #108 | JwtVCValidator — W3C VC JWT credential validation | M | Med | Deferred from #81; validUntil-bounded TTL gap |
-| #96 | Reactive tier code-gen (Vert.x codegen style) | XL | High | Largest remaining gap |
+| #111 | Minor review findings from #107 (batch fix) | S | Low | Fastest to close |
+| #112 | Migrate identity infrastructure to casehub-identity (Phase 1) | L | Med | Blocks on parent#133 |
+| #113 | Refactor AgentIdentityVerificationService to primitive signature (Phase 2 prep) | M | Med | Depends on #112 |
+| #108 | JwtVCValidator — W3C VC JWT credential validation | M | Med | Will land in casehub-identity, not ledger — coordinate with parent#133 |
 | #101 | Vault AppRole/OIDC auth for VaultTransitAgentSigner | M | Med | Deferred from #85 |
 | #102 | Cloud KMS adapters (AWS KMS, GCP, Azure) | L | Med | Deferred from #85 |
-| #110 | ScimDIDResolver @Alternative (design decision needed) | M | Med | Filed this session — eliminate external DID hosting for enterprise |
-| #111 | Minor review findings from #107 (batch fix) | S | Low | test constructor requireHttps field, authToken @PostConstruct warn, enricher unit test |
+| #96 | Reactive tier code-gen (Vert.x codegen style) | XL | High | Largest remaining gap |
 
 ## References
 
