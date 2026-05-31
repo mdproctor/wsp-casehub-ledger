@@ -27,10 +27,10 @@ Clean main. Start next issue. Best picks:
 ## Cross-Module
 
 **We're blocking:**
-- `casehubio/parent#133` — needs ledger to confirm extraction list before creating casehub-identity module
+- `casehubio/platform#52` — needs ledger to confirm extraction list before creating casehub-identity module
 
 **Blocked by:**
-- `casehubio/parent#133` — must publish casehub-identity before ledger#112 can land
+- `casehubio/platform#52` — must publish casehub-identity before ledger#112 can land
 
 ## What's Left
 
