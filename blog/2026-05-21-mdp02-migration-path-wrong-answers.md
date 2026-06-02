@@ -4,7 +4,7 @@ title: "The migration path with three wrong answers"
 date: 2026-05-21
 type: phase-update
 entry_type: note
-subtype: log
+subtype: diary
 projects: [ledger]
 tags: [quarkus, flyway, extension, architecture]
 ---

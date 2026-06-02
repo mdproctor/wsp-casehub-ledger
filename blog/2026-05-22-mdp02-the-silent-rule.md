@@ -4,7 +4,7 @@ title: "The Silent Rule"
 date: 2026-05-22
 type: phase-update
 entry_type: note
-subtype: log
+subtype: diary
 projects: [ledger]
 tags: [java, archunit, testing, structural-testing]
 ---
