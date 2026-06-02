@@ -2,6 +2,7 @@
 
 | File | Date | Title |
 |------|------|-------|
+| [2026-06-02-mdp01-the-write-that-commits-before-returning.md](2026-06-02-mdp01-the-write-that-commits-before-returning.md) | 2026-06-02 | OutcomeRecorder + trust routing architecture; incremental pipeline descoped; PlainLedgerEntry spec correction; routing-enabled critical config; 604 tests green |
 | [2026-06-01-mdp01-the-infrastructure-that-found-its-address.md](2026-06-01-mdp01-the-infrastructure-that-found-its-address.md) | 2026-06-01 | Identity infrastructure extracted from ledger to casehub-platform-identity; platform ownership rule; IdentityCacheInvalidator bridge pattern; AgentIdentityVerificationService primitive signature; .m2 extension descriptor cache gotcha |
 | [2026-05-31-mdp01-cdi-event-scim-enterprise-identity.md](2026-05-31-mdp01-cdi-event-scim-enterprise-identity.md) | 2026-05-31 | CDI event-driven cache invalidation (#103), ScimActorDIDProvider SCIM2 enterprise DID lookup (#107), ReactiveAgentIdentityVerificationService @DefaultBean bridge (#109); ARC @Observes abstract class trap, URLEncoder + vs %20, @WithDefault("") SmallRye rejection |
 | [2026-05-30-mdp01-did-proves-who.md](2026-05-30-mdp01-did-proves-who.md) | 2026-05-30 | actorId DID/VC binding: two-field model, alsoKnownAs divergence attack, SCIM2 connection, Arc CDI proxy @Priority gotcha, REQUIRES_NEW audit persistence; 523 tests green |
