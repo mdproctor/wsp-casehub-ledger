@@ -3,6 +3,7 @@
 **Issue:** casehubio/ledger#114
 **Date:** 2026-06-02
 **Branch:** issue-114-lightweight-mode
+**Incremental pipeline deferred to:** casehubio/ledger#115
 
 ---
 
@@ -11,154 +12,168 @@
 QuarkMind (`mdproctor/quarkmind`) needs outcome-tracking to enable trust-weighted plugin
 routing at game-loop granularity (~22Hz). Four plugins — strategy, economics, tactics,
 scouting — make decisions each game tick. QuarkMind wants to record plugin outcomes and
-feed them into trust scoring for adaptive routing.
+feed them into trust scoring for adaptive routing via `TrustWeightedAgentStrategy`.
 
 The compliance stack (Merkle hash chain, DID/VC identity verification, Ed25519 bilateral
 signing) is not needed here. Game AI decisions are not compliance artifacts; signing
 overhead per entry is unacceptable at game-loop frequency.
 
-The core requirements from QuarkMind are:
+The core requirements from QuarkMind:
 - Async, non-blocking writes that do not block the game loop
 - No signing, no hash chain, no identity verification overhead
 - In-memory backend for game sessions (no DB)
-- Trust scores queryable per plugin: `trustScore("quarkmind:strategy@v1")` is sufficient
+- Trust scores queryable per plugin capability
 - Compatible with `TrustWeightedAgentStrategy` from `casehub-engine`
 
 ---
 
-## 2. What Already Works — Configuration Only
+## 2. Routing Architecture — How Trust Reaches Routing
 
-Several requirements are already satisfied by existing feature flags. **No code is needed
-for these.**
+Understanding the actual read path is essential before designing the write path.
+
+`TrustWeightedAgentStrategy` does **not** read `TrustGateService`. It reads `TrustScoreCache`
+(`io.casehub.ledger.routing.TrustScoreCache` in `casehub-engine`), an in-memory
+`ConcurrentHashMap` keyed by `"actorId:capabilityKey"`. `TrustScoreCache` populates via:
+
+1. **Startup hydration**: `@PostConstruct hydrate()` reads all rows from
+   `ActorTrustScoreRepository` directly.
+2. **`TrustScoreFullPayload` events**: `@Observes onFull()` refreshes the entire cache.
+   Fired by `TrustScoreRoutingPublisher` at the end of every `TrustScoreJob.runComputation()`.
+3. **`TrustScoreDeltaPayload` events**: `onDelta()` is a **no-op** — delta payloads carry
+   only GLOBAL scores; CAPABILITY scores update only from full payloads.
+
+Consequence: trust score freshness for routing is governed by the `TrustScoreJob` schedule.
+After each batch run, `TrustScoreFullPayload` refreshes the cache and routing sees new scores.
+
+For QuarkMind (4 in-memory actors, games lasting minutes): setting
+`casehub.ledger.trust-score.schedule=30s` means routing decisions use scores that are at
+most 30 seconds stale. Per-game outcome attestations accumulate; the next batch run
+incorporates them. This is correct and complete without any incremental infrastructure.
+
+An incremental update pipeline (sub-batch trust freshness) is out of scope here because it
+requires: (a) `TrustScoreCache` per-actor refresh in `casehub-engine`, (b) transaction
+demarcation to avoid race conditions, and (c) `TrustScoreFullPayload` semantics resolution.
+Tracked in casehubio/ledger#115.
+
+**CAPABILITY scores are what routing reads.** All writes via `OutcomeRecorder` that are
+intended to influence routing must include a `capabilityTag`. GLOBAL-tagged attestations
+contribute to the global Beta score but not to `TrustScoreCache` and therefore not to
+`TrustWeightedAgentStrategy`.
+
+---
+
+## 3. What Already Works — Configuration Only
+
+These requirements are satisfied by existing feature flags. **No new code.**
 
 | Requirement | Mechanism | Config key |
 |---|---|---|
 | Skip Merkle hash chain | `LedgerConfig.hashChain().enabled()` | `casehub.ledger.hash-chain.enabled=false` |
 | Skip agent signing | No key configured → `AgentSignatureEnricher` is a no-op | *(omit `casehub.ledger.agent-signing.keys.*`)* |
-| Skip DID/VC validation | No DID configured → enrichers are no-ops | *(omit `casehub.ledger.agent-identity.dids.*`)* |
+| Skip DID/VC validation | No DID configured → identity enrichers are no-ops | *(omit `casehub.ledger.agent-identity.dids.*`)* |
 | In-memory persistence | `casehub-ledger-memory` on classpath | Add `casehub-ledger-memory` dependency |
-| Skip trust score | Default | `casehub.ledger.trust-score.enabled=false` (default) |
+| Short trust score interval | `TrustScoreJob` schedule | `casehub.ledger.trust-score.schedule=30s` |
 | EigenTrust disabled | Default | `casehub.ledger.trust-score.eigentrust.enabled=false` (default) |
-
-The in-memory module (`casehub-ledger-memory`) provides `@Alternative @Priority(1)`
-implementations for all persistence SPIs. With it on the classpath, no datasource is
-required — CDI resolution activates the in-memory repos automatically.
 
 ### Why EigenTrust must stay disabled for QuarkMind
 
 QuarkMind has 4 plugins and a single attestor (the game engine). This is a star attestation
-graph — EigenTrust power iteration on a star graph is equivalent to direct trust from a
-single source and adds no value. Smaller graphs with a pre-trusted fallback also risk
-3-cycle non-convergence (GE-20260421-09d636). Use Bayesian Beta direct scores only.
+graph — EigenTrust on a star graph is equivalent to direct trust from a single source and
+adds no value. Smaller graphs with pre-trusted fallback risk 3-cycle non-convergence
+(GE-20260421-09d636). See ADR 0016.
 
-See ADR 0016 for the platform-level applicability criteria.
+### Why `casehub.ledger.trust-score.schedule` is the freshness lever
 
----
-
-## 3. What Is Genuinely Missing — New Additions
-
-Five gaps remain after configuration:
-
-1. **No combined write API.** Recording a decision + outcome currently requires two
-   separate calls: `save(LedgerEntry)` then `saveAttestation(LedgerAttestation)`. The game
-   loop needs one.
-
-2. **Trust score recomputation is batch-only and full-table-scan.** `TrustScoreJob` loads
-   all events for all actors on every run. With 22Hz writes accumulating, this degrades.
-   Per-actor incremental recomputation is needed.
-
-3. **No event fired when an attestation is saved.** Nothing can react to an attestation
-   arriving to trigger incremental recomputation.
-
-4. **`LedgerEntryRepository` lacks an unbounded per-actor event query.** The existing
-   `findByActorId(actorId, from, to)` requires time bounds and returns all entry types.
-   Per-actor trust recomputation needs all EVENT entries for one actor, unbounded.
-
-5. **No pluggable trigger for when trust scores update.** There is no SPI for whether
-   trust recomputation happens immediately on attestation or deferred to the batch job.
+`TrustScoreJob` is configurable via `casehub.ledger.trust-score.schedule` (default `24h`).
+For QuarkMind: `30s`. A full batch run across 4 in-memory actors is microseconds. The job
+fires `TrustScoreFullPayload`, `TrustScoreCache` refreshes, `TrustWeightedAgentStrategy`
+sees new scores. No incremental infrastructure needed.
 
 ---
 
-## 4. New Components
+## 4. What Is Genuinely Missing — New Additions
 
-### 4.1 `LedgerAttestationRecordedEvent`
+Two gaps remain after configuration:
 
-A CDI event record fired by `saveAttestation()` in both the JPA and in-memory
-implementations of `LedgerEntryRepository`, immediately after the attestation is stored.
+1. **No combined write API.** Recording a decision + outcome currently requires two separate
+   calls: `save(LedgerEntry)` then `saveAttestation(LedgerAttestation)`. The game loop
+   needs a single call.
 
-```java
-// runtime/service/LedgerAttestationRecordedEvent.java
-public record LedgerAttestationRecordedEvent(
-    String actorId,
-    String capabilityTag,
-    UUID ledgerEntryId,
-    UUID attestationId
-) {}
-```
-
-**Placement:** `runtime/service/` — consistent with `AgentKeyRotatedEvent`, `AgentSignatureSuspectEvent`.
-
-**Where it fires:** At the end of `saveAttestation()` in both `InMemoryLedgerEntryRepository`
-and `JpaLedgerEntryRepository`. Uses synchronous CDI `Event.fire()` — the CDI container
-delivers to `@ObservesAsync` observers asynchronously on a worker thread.
-
-**Not fired by:** `OutcomeRecorder.record()` directly — it fires through `saveAttestation()`.
-This ensures the event fires regardless of how an attestation reaches the repository.
+2. **EigenTrust activation produces silent wrong results.** When `eigentrust.enabled=true`
+   with an insufficient pre-trusted set, power iteration produces degenerate scores with no
+   warning. A startup validation log entry is needed.
 
 ---
 
-### 4.2 `OutcomeRecord` value type and `OutcomeRecorder` SPI
+## 5. New Components
 
-#### 4.2.1 `OutcomeRecord`
+### 5.1 `OutcomeRecord` — Java record
 
-A builder-based value type representing one decision-with-outcome write. Lives in `api/`
-so consumers depend only on `casehub-ledger-api`.
-
-Required fields (must be set via the factory method):
-- `actorId` — the decision-making plugin identity (e.g. `"quarkmind:strategy@v1"`)
-- `subjectId` — the aggregate this decision belongs to (e.g. game session UUID)
-- `verdict` — `AttestationVerdict.SOUND` (win) or `FLAGGED` (loss/error)
-- `confidence` — epistemic weight of this outcome observation, in (0.0, 1.0]
-
-Optional fields (have defaults):
-- `capabilityTag` — defaults to `CapabilityTag.GLOBAL`
-- `actorType` — defaults to `ActorType.AGENT`
-- `actorRole` — nullable; the functional role (e.g. `"strategy"`)
-- `occurredAt` — defaults to `Instant.now()` at write time
-- `attestorId` — defaults to `casehub.ledger.outcome.default-attestor-id` from config
-- `attestorType` — defaults to `casehub.ledger.outcome.default-attestor-type` from config
+A value type for one decision-with-outcome write. Lives in `api/`. Java record with compact
+constructor validation, `of()` factory for required fields, and `with*` methods for optionals.
 
 ```java
 // api/OutcomeRecord.java
-public final class OutcomeRecord {
-    public final String actorId;
-    public final UUID subjectId;
-    public final AttestationVerdict verdict;
-    public final double confidence;
-    public final String capabilityTag;
-    public final ActorType actorType;
-    public final String actorRole;
-    public final Instant occurredAt;
-    public final String attestorId;    // null → use configured default
-    public final ActorType attestorType; // null → use configured default
-
-    public static Builder of(String actorId, UUID subjectId,
-                              AttestationVerdict verdict, double confidence) { ... }
-
-    public static final class Builder {
-        public Builder withCapability(String capabilityTag) { ... }
-        public Builder withActorType(ActorType actorType) { ... }
-        public Builder withActorRole(String actorRole) { ... }
-        public Builder withOccurredAt(Instant occurredAt) { ... }
-        public Builder withAttestor(String attestorId, ActorType attestorType) { ... }
-        public OutcomeRecord build() { ... }
+public record OutcomeRecord(
+    String actorId,           // required: the decision-making plugin identity
+    UUID subjectId,            // required: aggregate this decision belongs to (e.g. game session UUID)
+    AttestationVerdict verdict, // required: SOUND = positive outcome, FLAGGED = negative outcome
+    double confidence,         // required: epistemic weight in (0.0, 1.0]
+    String capabilityTag,      // default: CapabilityTag.GLOBAL — use a named capability for routing
+    ActorType actorType,       // default: ActorType.AGENT
+    String actorRole,          // nullable: functional role (e.g. "strategy")
+    Instant occurredAt,        // nullable: defaults to Instant.now() at save time
+    String attestorId,         // nullable: defaults to casehub.ledger.outcome.default-attestor-id
+    ActorType attestorType     // nullable: defaults to casehub.ledger.outcome.default-attestor-type
+) {
+    // Compact constructor for validation
+    public OutcomeRecord {
+        Objects.requireNonNull(actorId, "actorId required");
+        Objects.requireNonNull(subjectId, "subjectId required");
+        Objects.requireNonNull(verdict, "verdict required");
+        if (confidence <= 0.0 || confidence > 1.0) {
+            throw new IllegalArgumentException(
+                "confidence must be in (0.0, 1.0] — got " + confidence
+                + ". Use 0.1 for tick-level, 0.7 for game-level, 1.0 for session-level.");
+        }
+        if (capabilityTag == null) capabilityTag = CapabilityTag.GLOBAL;
+        if (actorType == null)     actorType = ActorType.AGENT;
     }
+
+    /** Factory with required fields only; optionals get defaults. */
+    public static OutcomeRecord of(String actorId, UUID subjectId,
+                                    AttestationVerdict verdict, double confidence) {
+        return new OutcomeRecord(actorId, subjectId, verdict, confidence,
+                CapabilityTag.GLOBAL, ActorType.AGENT, null, null, null, null);
+    }
+
+    public OutcomeRecord withCapability(String cap)            { return new OutcomeRecord(actorId, subjectId, verdict, confidence, cap,         actorType, actorRole, occurredAt, attestorId, attestorType); }
+    public OutcomeRecord withActorType(ActorType t)            { return new OutcomeRecord(actorId, subjectId, verdict, confidence, capabilityTag, t,         actorRole, occurredAt, attestorId, attestorType); }
+    public OutcomeRecord withActorRole(String role)            { return new OutcomeRecord(actorId, subjectId, verdict, confidence, capabilityTag, actorType, role,      occurredAt, attestorId, attestorType); }
+    public OutcomeRecord withOccurredAt(Instant ts)            { return new OutcomeRecord(actorId, subjectId, verdict, confidence, capabilityTag, actorType, actorRole, ts,         attestorId, attestorType); }
+    public OutcomeRecord withAttestor(String id, ActorType t)  { return new OutcomeRecord(actorId, subjectId, verdict, confidence, capabilityTag, actorType, actorRole, occurredAt, id,         t           ); }
 }
 ```
 
-#### 4.2.2 `OutcomeRecorder`
+**Placement:** `api/` — consumers depend on `casehub-ledger-api` only.
 
-Blocking interface in `api/`. Consumers that are not reactive inject this.
+**Multi-granularity via `confidence`:** The Bayesian Beta computation in `TrustScoreComputer`
+already applies `weight = decayFunction.weight(ageInDays, verdict) × confidence`. A
+`confidence=0.7` game attestation contributes 7× more than a `confidence=0.1` tick
+attestation of the same age. No additional mechanism needed.
+
+Recommended values for QuarkMind:
+- Per-tick outcome: `0.1` — high frequency, noisy; use sparingly
+- Per-game outcome (recommended): `0.7` — meaningful signal for routing
+- Session rollup: `1.0` — long-term performance synthesis
+
+**Recommendation: record at per-game granularity.** Per-tick attestations at 22Hz × 4
+plugins = 88/second accumulates rapidly in the in-memory store and produces noisy trust
+signals. Trust routing decisions happen at game start, not tick frequency.
+
+---
+
+### 5.2 `OutcomeRecorder` — blocking interface
 
 ```java
 // api/OutcomeRecorder.java
@@ -166,46 +181,78 @@ public interface OutcomeRecorder {
     /**
      * Record a plugin decision and its outcome as a single atomic operation.
      * Writes a LedgerEntry (EVENT) followed by a LedgerAttestation.
+     * Both writes commit together; neither is visible until the operation completes.
      */
     void record(OutcomeRecord record);
 }
 ```
 
-#### 4.2.3 `ReactiveOutcomeRecorder`
+**Placement:** `api/`
 
-Reactive interface in `api/`. QuarkMind's game loop uses this to avoid blocking.
+---
+
+### 5.3 `ReactiveOutcomeRecorder` — reactive interface
 
 ```java
 // api/ReactiveOutcomeRecorder.java
 public interface ReactiveOutcomeRecorder {
+    /** Non-blocking variant — returns a Uni that completes after both writes commit. */
     Uni<Void> record(OutcomeRecord record);
 }
 ```
 
-#### 4.2.4 `DefaultOutcomeRecorder`
+**Placement:** `api/`
 
-Implementation in `runtime/`. `@DefaultBean @ApplicationScoped` — allows consumers to
-provide a custom `OutcomeRecorder` via `@ApplicationScoped` if they need custom write
-logic, following the platform-standard CDI priority pattern.
+---
 
-Writes `LedgerEntry` then `LedgerAttestation` within a `@Transactional` boundary. Uses
-`casehub.ledger.outcome.*` config for attestor defaults when `OutcomeRecord.attestorId`
-is null.
+### 5.4 `DefaultOutcomeRecorder` — blocking implementation
 
-**New config group** (`LedgerConfig.OutcomeConfig`):
+`@DefaultBean @ApplicationScoped` in `runtime/service/`. Allows consumers to provide a
+custom `OutcomeRecorder` via `@ApplicationScoped` if they need custom write logic.
+
+**Transaction demarcation.** `DefaultOutcomeRecorder.record()` is **not** `@Transactional`.
+It delegates writes to a package-private `@Transactional` `OutcomeRecordSaveService`:
+
+```java
+// Non-transactional outer method
+public void record(OutcomeRecord record) {
+    saveService.save(record, resolveAttestor(record));
+    // transaction has committed by this point for JPA consumers
+    // future: trust update strategy hook lives here (#115)
+}
+
+// @Transactional inner service — writes LedgerEntry + LedgerAttestation and commits
+@Transactional
+void OutcomeRecordSaveService.save(OutcomeRecord record, AttestorDefaults attestor) {
+    LedgerEntry entry = buildEntry(record);
+    ledgerRepo.save(entry);
+    LedgerAttestation attestation = buildAttestation(record, entry, attestor);
+    ledgerRepo.saveAttestation(attestation);
+}
 ```
-casehub.ledger.outcome.default-attestor-id=   # e.g. "quarkmind:game-engine@v1"
-casehub.ledger.outcome.default-attestor-type=SYSTEM
-```
 
-`LedgerEntry.entryType` is set to `LedgerEntryType.EVENT`. The `actorId` on the entry is
-the plugin identity; the `actorId` on the attestation is the attestor identity.
+This ensures that for JPA consumers, both writes are visible in the database before any
+subsequent operation. For in-memory consumers, `@Transactional` is a no-op and the
+distinction is immaterial.
 
-#### 4.2.5 `BlockingToReactiveOutcomeRecorder`
+**Attestor defaults.** `OutcomeRecorder` reads `casehub.ledger.outcome.default-attestor-id`
+and `casehub.ledger.outcome.default-attestor-type` when `OutcomeRecord.attestorId` is null.
+`attestorId` is required on `LedgerAttestation`; providing a deployment-level default avoids
+per-call boilerplate. For QuarkMind: `attestorId="quarkmind:game-engine@v1"`, `attestorType=SYSTEM`.
 
-Bridge implementation in `runtime/`. `@DefaultBean @ApplicationScoped` per the
-`reactive-spi-bridge-default-bean` protocol. **No `@IfBuildProperty` gate** — the bridge
-has no Hibernate Reactive dependency.
+`LedgerEntry.entryType` is set to `LedgerEntryType.EVENT`. `LedgerEntry.actorId` is the
+plugin identity. `LedgerAttestation.attestorId` is the game engine identity.
+
+**`OutcomeRecordSaveService` is package-private** — not a public API. It exists solely for
+transaction demarcation.
+
+---
+
+### 5.5 `BlockingToReactiveOutcomeRecorder` — bridge
+
+`@DefaultBean @ApplicationScoped` per the `reactive-spi-bridge-default-bean` protocol.
+**No `@IfBuildProperty` gate** — the bridge has no Hibernate Reactive dependency and must
+be active under all profiles.
 
 ```java
 @DefaultBean
@@ -222,231 +269,158 @@ public class BlockingToReactiveOutcomeRecorder implements ReactiveOutcomeRecorde
 }
 ```
 
-**Placement:** `api/` holds `OutcomeRecord`, `OutcomeRecorder`, `ReactiveOutcomeRecorder`.
-`runtime/service/` holds `DefaultOutcomeRecorder` and `BlockingToReactiveOutcomeRecorder`.
+**Placement:** `runtime/service/`
 
 ---
 
-### 4.3 `LedgerEntryRepository.findEventsByActorId(String actorId)`
+### 5.6 EigenTrust Startup Validation
 
-New method on the existing SPI. Returns all `LedgerEntryType.EVENT` entries for the given
-actor, ordered by sequence number ascending, with no time bounds.
-
-```java
-// Added to LedgerEntryRepository SPI
-List<LedgerEntry> findEventsByActorId(String actorId);
-```
-
-Implementations:
-- **In-memory:** stream filter on `entries` by `LedgerEntryType.EVENT` and actor ID.
-  Handles `actorIdentityProvider.tokeniseForQuery()` for pseudonymised IDs.
-- **JPA:** new `@NamedQuery` on `LedgerEntry`: `SELECT e FROM LedgerEntry e WHERE e.actorId = :actorId AND e.entryType = 'EVENT' ORDER BY e.sequenceNumber ASC`
-
-This is a breaking addition to the SPI. All existing implementations must add the method.
-The JPA implementation and the in-memory implementation are both in this repo; there are no
-known external implementors.
-
----
-
-### 4.4 `TrustScoreRecomputeService`
-
-A new `@ApplicationScoped` CDI bean that extracts per-actor trust recomputation from
-`TrustScoreJob`. `TrustScoreJob` will delegate its per-actor loop to this service.
-
-```java
-// runtime/service/TrustScoreRecomputeService.java
-@ApplicationScoped
-public class TrustScoreRecomputeService {
-
-    @Transactional(REQUIRES_NEW)
-    public void recomputeForActor(String actorId) {
-        List<LedgerEntry> decisions = ledgerRepo.findEventsByActorId(actorId);
-        if (decisions.isEmpty()) return;
-
-        Set<UUID> entryIds = decisions.stream().map(e -> e.id).collect(toSet());
-        Map<UUID, List<LedgerAttestation>> attestationsByEntry =
-            ledgerRepo.findAttestationsForEntries(entryIds);
-
-        ActorType actorType = decisions.stream()
-            .map(e -> e.actorType).filter(Objects::nonNull).findFirst()
-            .orElse(ActorType.AGENT);
-
-        // capability pass, dimension pass, global pass — same logic as TrustScoreJob
-        // ...
-        // upsert via trustRepo
-    }
-}
-```
-
-`@Transactional(REQUIRES_NEW)` ensures that when called from an `@ObservesAsync` context
-(which runs after the originating transaction commits), the recomputation reads committed
-attestation data. For in-memory consumers, `@Transactional` is a no-op.
-
-`TrustScoreJob.runComputation()` is refactored to call `recomputeForActor(actorId)` for
-each actor in its loop, removing the duplicated per-actor logic.
-
----
-
-### 4.5 `AttestationTrustUpdateStrategy` SPI and `IncrementalTrustUpdateListener`
-
-#### 4.5.1 `AttestationTrustUpdateStrategy`
-
-Pure interface — no CDI observer annotations. In `runtime/service/` because its method
-parameters use `String` and `UUID` only, but implementations will typically inject CDI
-beans.
-
-```java
-// runtime/service/AttestationTrustUpdateStrategy.java
-public interface AttestationTrustUpdateStrategy {
-    /**
-     * Called when a new attestation has been persisted for an actor.
-     * Implementations decide whether and how to trigger trust score recomputation.
-     *
-     * @param actorId      the attested actor
-     * @param capabilityTag the capability tag on the attestation
-     */
-    void onAttestationRecorded(String actorId, String capabilityTag);
-}
-```
-
-#### 4.5.2 `ConfigDrivenAttestationTrustUpdateStrategy`
-
-`@DefaultBean @ApplicationScoped`. Reads `casehub.ledger.trust-score.update-trigger`
-from `LedgerConfig`:
-- `IMMEDIATE` — calls `trustScoreRecomputeService.recomputeForActor(actorId)` on the
-  calling thread. Because `IncrementalTrustUpdateListener` delivers this call via
-  `@ObservesAsync`, it already runs on a worker thread, not the event loop.
-- `SCHEDULED` — no-op; defers entirely to the `TrustScoreJob` batch schedule.
-- `NONE` — no-op; no trust score updates at all (for consumers that manage scores externally).
-
-New config key: `casehub.ledger.trust-score.update-trigger` with enum values
-`IMMEDIATE | SCHEDULED | NONE`. Default: `IMMEDIATE`.
-
-#### 4.5.3 `IncrementalTrustUpdateListener`
-
-`@ApplicationScoped` CDI bean. Observes `LedgerAttestationRecordedEvent` asynchronously
-and delegates to the strategy. Always present in the CDI graph; the strategy impl controls
-whether any work is done.
-
-```java
-// runtime/service/IncrementalTrustUpdateListener.java
-@ApplicationScoped
-public class IncrementalTrustUpdateListener {
-
-    @Inject AttestationTrustUpdateStrategy strategy;
-
-    public void onAttestationRecorded(
-            @ObservesAsync LedgerAttestationRecordedEvent event) {
-        strategy.onAttestationRecorded(event.actorId(), event.capabilityTag());
-    }
-}
-```
-
----
-
-### 4.6 EigenTrust Startup Validation
-
-At Quarkus startup, if `casehub.ledger.trust-score.eigentrust.enabled=true` and
-`casehub.ledger.trust-score.eigentrust.pre-trusted-actors` has fewer than 3 entries (or
-is empty), log a WARNING:
+At application startup (runtime `@PostConstruct` or `@Observes StartupEvent`): if
+`casehub.ledger.trust-score.eigentrust.enabled=true` and
+`casehub.ledger.trust-score.eigentrust.pre-trusted-actors` has fewer than 3 entries or is
+empty, log a WARNING:
 
 ```
 casehub-ledger: EigenTrust is enabled but pre-trusted-actors has fewer than 3 entries.
 EigenTrust is inappropriate for small agent graphs or single-attestor deployments —
-results may be degenerate or non-convergent. See ADR 0016.
+results may be degenerate or non-convergent. Disable with:
+casehub.ledger.trust-score.eigentrust.enabled=false (the default). See ADR 0016.
 ```
 
-This runs at runtime startup (a `@PostConstruct` or startup observer), not build time.
+A `@BuildStep` in the deployment module would give earlier feedback (augmentation-time),
+but build-time config does not have access to the runtime `pre-trusted-actors` list.
+Runtime startup warning is the practical option.
 
 ---
 
-## 5. Data Flow
+### 5.7 `LedgerConfig` additions
 
-### 5.1 Game loop write path (QuarkMind)
+New config group in `LedgerConfig` (in `runtime/`) for `OutcomeRecorder` defaults:
 
-```
-game tick completes → outcome known
-  → ReactiveOutcomeRecorder.record(OutcomeRecord.of(pluginId, gameSessionId, verdict, confidence).withCapability("strategy").build())
-  → BlockingToReactiveOutcomeRecorder wraps → Worker thread
-  → DefaultOutcomeRecorder.record() [@Transactional]
-      → ledgerRepo.save(LedgerEntry{actorId=pluginId, subjectId=gameSessionId, entryType=EVENT, ...})
-      → ledgerRepo.saveAttestation(LedgerAttestation{attestorId=gameEngineId, verdict=verdict, confidence=confidence, ...})
-          → fires LedgerAttestationRecordedEvent(pluginId, capabilityTag, entryId, attestationId) [sync CDI fire]
-  → CDI container delivers LedgerAttestationRecordedEvent to @ObservesAsync → Worker thread
-  → IncrementalTrustUpdateListener.onAttestationRecorded()
-  → ConfigDrivenAttestationTrustUpdateStrategy.onAttestationRecorded()  [IMMEDIATE mode]
-  → TrustScoreRecomputeService.recomputeForActor(pluginId) [@Transactional(REQUIRES_NEW)]
-      → ledgerRepo.findEventsByActorId(pluginId)
-      → ledgerRepo.findAttestationsForEntries(entryIds)
-      → TrustScoreComputer.compute(decisions, attestationsByEntry, now)
-      → trustRepo.upsert(pluginId, GLOBAL, ...)
-      → trustRepo.upsert(pluginId, CAPABILITY, "strategy", ...)
-```
+```java
+// runtime/config/LedgerConfig.java
+OutcomeConfig outcome();
 
-### 5.2 Trust score read path (TrustWeightedAgentStrategy)
+interface OutcomeConfig {
+    /**
+     * Default attestor ID used when OutcomeRecord.attestorId is null.
+     * For QuarkMind: "quarkmind:game-engine@v1"
+     */
+    java.util.Optional<String> defaultAttestorId();
 
-```
-TrustWeightedAgentStrategy (casehub-engine)
-  → TrustGateService.currentScore("quarkmind:strategy@v1")
-  → ActorTrustScoreRepository.findByActorId("quarkmind:strategy@v1")
-  → InMemoryActorTrustScoreRepository.store.get(key)
-  → returns Optional<Double>
+    /**
+     * Default attestor type used when OutcomeRecord.attestorType is null.
+     * Defaults to SYSTEM.
+     */
+    @WithDefault("SYSTEM")
+    io.casehub.platform.api.identity.ActorType defaultAttestorType();
+}
 ```
 
-No changes needed to `TrustGateService`, `TrustWeightedAgentStrategy`, or
-`ActorTrustScoreRepository` — these already work correctly with in-memory repos.
-
-### 5.3 Multi-granularity confidence weighting
-
-`confidence` is already used in `TrustScoreComputer`:
-```
-weight = decayFunction.weight(ageInDays, verdict) × confidence
-alpha += weight  (SOUND/ENDORSED)
-beta  += weight  (FLAGGED/CHALLENGED)
-```
-
-So `confidence=0.7` per-game attestations contribute 7× more than `confidence=0.1`
-per-tick attestations of the same age. The ratio is constant over time — both decay at the
-same rate, only the contribution magnitude differs.
-
-**Recommended confidence values for QuarkMind:**
-- Per-tick outcome: `0.1` — high frequency, noisy, use sparingly
-- Per-game outcome: `0.7` — recommended default for routing decisions
-- Session rollup: `1.0` — long-term performance synthesis
-
-**Recommendation:** record at per-game granularity only. Per-tick writes at 22Hz × 4
-plugins = 88 attestations/second — this will grow the in-memory store rapidly and produce
-noisy trust signals. Trust routing decisions are made at game start (not tick start), so
-per-game outcomes are the correct granularity.
+`OutcomeConfig` lives in `runtime/config/LedgerConfig.java`, not in `api/`. `@ConfigMapping`
+and `@ConfigRoot` are SmallRye Config annotations that do not exist in `api/`.
 
 ---
 
-## 6. QuarkMind Configuration Reference
+## 6. Data Flow
+
+### 6.1 Game loop write path (QuarkMind)
+
+```
+game outcome known (e.g. game won/lost)
+
+→ ReactiveOutcomeRecorder.record(
+      OutcomeRecord.of("quarkmind:strategy@v1", gameSessionId, AttestationVerdict.SOUND, 0.7)
+                   .withCapability("strategy")
+                   .build()
+  )
+→ BlockingToReactiveOutcomeRecorder wraps → worker thread
+→ DefaultOutcomeRecorder.record()  [NOT @Transactional]
+    → OutcomeRecordSaveService.save()  [@Transactional — commits both writes]
+        → ledgerRepo.save(LedgerEntry{
+              actorId="quarkmind:strategy@v1",
+              subjectId=gameSessionId,
+              entryType=EVENT,
+              occurredAt=now
+          })
+        → ledgerRepo.saveAttestation(LedgerAttestation{
+              attestorId="quarkmind:game-engine@v1",
+              attestorType=SYSTEM,
+              verdict=SOUND,
+              confidence=0.7,
+              capabilityTag="strategy"
+          })
+    [transaction committed]
+```
+
+### 6.2 Trust score update path
+
+```
+TrustScoreJob fires every 30s (configurable)
+→ runComputation()  [@Transactional — all actors in one transaction]
+    → findAllEvents() — loads all EVENT entries
+    → groups by actorId
+    → capability pass, dimension pass, global pass per actor
+    → trustRepo.upsert(actorId, CAPABILITY, "strategy", ...)
+    → trustRepo.upsert(actorId, GLOBAL, ...)
+    → [all upserts committed atomically]
+→ TrustScoreRoutingPublisher.publish(currentScores, ...)
+    → fires TrustScoreFullPayload(all current CAPABILITY scores)
+
+TrustScoreCache.onFull() [in casehub-engine]
+    → refreshes ConcurrentHashMap with all CAPABILITY scores
+```
+
+### 6.3 Routing read path
+
+```
+game loop: select which plugin implementation to use
+
+→ TrustWeightedAgentStrategy.select(context, candidates)
+→ TrustCandidateClassifier.classify(candidates, "strategy", policy, cache)
+→ TrustScoreCache.getCapabilityScore("quarkmind:strategy@v1", "strategy")
+    → returns OptionalDouble from ConcurrentHashMap
+→ phase classification (BOOTSTRAP if decisionCount < minimumObservations, else QUALIFIED)
+→ blended score = trust × blendFactor + workload × (1 - blendFactor)
+```
+
+**Key point:** writes are CAPABILITY-scoped (`capabilityTag="strategy"`). Routing reads
+CAPABILITY scores from `TrustScoreCache`. The read path matches the write path. GLOBAL-tagged
+attestations feed the global Beta score but do NOT reach `TrustWeightedAgentStrategy`.
+
+### 6.4 Batch atomicity
+
+`TrustScoreJob.runComputation()` remains `@Transactional`. All actor upserts commit
+together or not at all. This is unchanged — the batch atomicity guarantee is preserved.
+
+`TrustScoreJob` does NOT call any new per-actor service. The incremental path is tracked
+separately in casehubio/ledger#115.
+
+---
+
+## 7. QuarkMind Configuration Reference
 
 Complete `application.properties` for a QuarkMind game session:
 
 ```properties
-# Disable compliance stack
+# Disable compliance overhead
 casehub.ledger.hash-chain.enabled=false
-casehub.ledger.agent-identity.validation-mode=WARN
 
-# Enable trust scoring with immediate incremental updates
+# Enable trust scoring — short schedule for game-loop freshness
 casehub.ledger.trust-score.enabled=true
-casehub.ledger.trust-score.update-trigger=IMMEDIATE
+casehub.ledger.trust-score.schedule=30s
 casehub.ledger.trust-score.eigentrust.enabled=false
 
-# Reactive writes (required for non-blocking game loop)
+# Reactive writes for non-blocking game loop
 casehub.ledger.reactive.enabled=true
 
-# OutcomeRecorder default attestor (the game engine itself)
+# OutcomeRecorder default attestor
 casehub.ledger.outcome.default-attestor-id=quarkmind:game-engine@v1
 casehub.ledger.outcome.default-attestor-type=SYSTEM
-
-# Actor ID convention for plugins (use in OutcomeRecord.of())
-# "quarkmind:strategy@v1", "quarkmind:economics@v1", "quarkmind:tactics@v1", "quarkmind:scouting@v1"
 ```
 
-Maven dependencies to add:
+Maven dependencies:
+
 ```xml
 <dependency>
   <groupId>io.casehub</groupId>
@@ -455,87 +429,115 @@ Maven dependencies to add:
 <dependency>
   <groupId>io.casehub</groupId>
   <artifactId>casehub-ledger-memory</artifactId>
-  <scope>runtime</scope>  <!-- application module -->
+  <scope>runtime</scope>  <!-- application module scope -->
 </dependency>
 ```
 
+Actor ID convention for QuarkMind plugins:
+`"quarkmind:strategy@v1"`, `"quarkmind:economics@v1"`, `"quarkmind:tactics@v1"`, `"quarkmind:scouting@v1"`
+
 ---
 
-## 7. Testing Approach
+## 8. Testing Approach
 
-All tests use in-memory repos (`casehub-ledger-memory`). No datasource required.
+All tests use in-memory repos. No datasource required.
 
 ### Unit tests (pure Java, no Quarkus)
 
-- `TrustScoreRecomputeService` — inject mock repos, verify per-actor Beta computation
-- `ConfigDrivenAttestationTrustUpdateStrategy` — verify IMMEDIATE calls recompute, SCHEDULED/NONE are no-ops
-- `OutcomeRecord` builder — validate required fields, defaults
+- `OutcomeRecord` — compact constructor validation: null actorId throws, null subjectId
+  throws, `confidence=0.0` throws, `confidence=1.1` throws, `confidence=0.7` accepted,
+  null capabilityTag defaults to `CapabilityTag.GLOBAL`, null actorType defaults to AGENT.
+- `OutcomeRecord.with*` — each `with*` produces a new record with the correct field updated
+  and all others preserved.
 
 ### Integration tests (`@QuarkusTest` with in-memory profile)
 
-1. **`OutcomeRecorderIT`** — call `OutcomeRecorder.record()` with a SOUND outcome; assert
-   `LedgerEntryRepository` contains the entry and attestation; assert `TrustGateService.currentScore(actorId)` is present and > 0.5.
+**`OutcomeRecorderIT`**
+- Call `OutcomeRecorder.record()` with a SOUND outcome, `capabilityTag="strategy"`
+- Assert `LedgerEntryRepository` contains one EVENT entry with the plugin actorId
+- Assert `LedgerEntryRepository.findAttestationsByEntryId()` returns one SOUND attestation
+  with `confidence=0.7` and `capabilityTag="strategy"`
+- Manually trigger `TrustScoreJob.runComputation()`
+- Assert `TrustGateService.currentScore(actorId, "strategy")` is present and > 0.5
+- Assert `ActorTrustScoreRepository.findCapabilityScore(actorId, "strategy")` is present
 
-2. **`ReactiveOutcomeRecorderIT`** — call `ReactiveOutcomeRecorder.record().await()`;
-   assert same post-conditions as above.
+**`ReactiveOutcomeRecorderIT`**
+- Call `ReactiveOutcomeRecorder.record(record).await().indefinitely()`
+- Assert same post-conditions as above
 
-3. **`IncrementalTrustUpdateIT`** — record two outcomes (SOUND, then FLAGGED); assert
-   trust score decreases after FLAGGED; assert score is updated within the same test
-   without manually triggering `TrustScoreJob`.
+**`MultiCapabilityIT`**
+- Record outcomes for all 4 plugins (strategy, economics, tactics, scouting)
+- One SOUND, three FLAGGED per game for economics (consistently bad)
+- Trigger `TrustScoreJob.runComputation()`
+- Assert strategy CAPABILITY score > economics CAPABILITY score
+- Assert all four plugins have distinct CAPABILITY scores for their respective tags
 
-4. **`EigenTrustStartupValidationIT`** — set `eigentrust.enabled=true` with empty
-   `pre-trusted-actors`; assert WARN log entry at startup.
+**`HighConfidenceOutweighsLowIT`**
+- Record `confidence=0.1` SOUND tick and `confidence=0.7` SOUND game for same actor
+- Trigger recomputation
+- Assert alpha contribution from game attestation is 7× the tick attestation contribution
+  (verify via `ActorTrustScoreRepository.findCapabilityScore().alpha`)
 
-5. **`MultiGranularityIT`** — record a low-confidence tick outcome and a high-confidence
-   game outcome for the same actor; assert game-level outcome has dominant influence on
-   computed trust score.
+**`EigenTrustStartupValidationIT`**
+- Configure `eigentrust.enabled=true`, empty `pre-trusted-actors`
+- Assert WARN log contains "EigenTrust is enabled but pre-trusted-actors has fewer than 3 entries"
 
-### What is NOT tested here
-
-- `TrustWeightedAgentStrategy` integration — tested in `casehub-engine`
-- Batch `TrustScoreJob` schedule behaviour — existing tests cover this
-
----
-
-## 8. Out of Scope
-
-The following were considered and explicitly deferred:
-
-**`DecayFunction` signature extension (add `confidence` param)** — the existing
-`weight × confidence` multiplication already handles multi-granularity weighting. Decay-rate
-differentiation by confidence (session attestations decay slower than tick attestations of the
-same age) is a meaningful improvement for compliance deployments but not needed for game AI
-where all attestations come from one source at uniform confidence. Tracked for future consideration.
-
-**DEBOUNCED trust update trigger** — batches burst attestations (e.g. 4 plugin outcomes
-at game end) into one recomputation after a quiescence window. `IMMEDIATE` with per-game
-recording produces at most 4 recomputations per game (one per plugin), each cheap with
-in-memory. Debouncing adds timer infrastructure with marginal benefit at QuarkMind's scale.
-Add if per-tick recording becomes necessary.
-
-**New module (`casehub-ledger-outcome`)** — the existing module structure and feature
-flags achieve the same separation. A new module adds Maven coordinate overhead without
-architectural benefit.
-
-**JPA implementation of `findEventsByActorId` is in scope.** Because `findEventsByActorId`
-is a new SPI method, the JPA implementation must ship in this issue — the SPI cannot be
-added without it. It is a single `@NamedQuery` addition on `LedgerEntry` and a one-method
-addition on `JpaLedgerEntryRepository`. Not deferred.
-
-**`casehub-engine` changes** — `TrustWeightedAgentStrategy` reads from `TrustGateService`
-which reads from `ActorTrustScoreRepository`. No changes needed in `casehub-engine` —
-the in-memory repo satisfies the injection point.
+**`OutcomeRecorderDefaultAttestorIT`**
+- Configure `casehub.ledger.outcome.default-attestor-id=quarkmind:game-engine@v1`
+- Record an `OutcomeRecord` with null `attestorId`
+- Assert saved `LedgerAttestation.attestorId == "quarkmind:game-engine@v1"`
 
 ---
 
-## 9. Module Impact Summary
+## 9. Out of Scope
+
+**Incremental per-actor trust recomputation (casehubio/ledger#115):** Allows trust scores
+to update within seconds of an attestation rather than waiting for the batch schedule.
+Descoped because: (a) requires `TrustScoreCache` per-actor refresh in casehub-engine,
+(b) has a transaction race condition requiring careful demarcation, (c) the batch schedule
+is sufficient for QuarkMind's use case.
+
+**On-read trust computation:** Compute trust score from raw attestation history at query
+time, bypassing the materialized store. Eliminates staleness entirely. Requires
+`TrustWeightedAgentStrategy` to accept a pluggable trust source SPI. Tracked as a
+casehub-engine architectural improvement.
+
+**`DecayFunction` signature extension (add `confidence` param):** The existing
+`weight × confidence` in `TrustScoreComputer` handles multi-granularity weighting.
+Decay-rate differentiation by confidence level is a future enhancement for compliance
+deployments, not needed for game AI.
+
+**CRDT incremental accumulator:** `alpha += weight_at_record_time`. Incorrect for
+deployments running longer than hours — decay weight is computed from `Instant.now()` at
+recomputation time, not at record time. CRDT bakes in the weight at `ageInDays=0` and
+never re-weights. The batch job's history scan is correctness, not inefficiency.
+
+**`findEventsByActorId` on `LedgerEntryRepository`:** Was needed by `TrustScoreRecomputeService`,
+which is now descoped. The existing `findByActorId(actorId, from, to)` covers other per-actor
+queries. Deferred to casehubio/ledger#115 if the incremental path is built.
+
+**JPA performance for JOINED inheritance queries:** `findAllEvents()` in `TrustScoreJob`
+triggers a Hibernate JOIN across all registered subclass tables. For installations with many
+subclasses (e.g., `work_item_ledger_entry`, `message_ledger_entry`), each batch run incurs
+this cost. Acceptable for QuarkMind (in-memory, no JOIN). For large JPA deployments,
+`findEventsByActorId` with a bounded window query (from #115) would reduce the JOIN scope.
+
+---
+
+## 10. Module Impact Summary
 
 | Module | Changes |
 |---|---|
-| `api` | + `OutcomeRecord`, `OutcomeRecorder`, `ReactiveOutcomeRecorder`; + `LedgerConfig.OutcomeConfig` (new config group) |
-| `runtime` | + `LedgerAttestationRecordedEvent`, `DefaultOutcomeRecorder`, `BlockingToReactiveOutcomeRecorder`, `AttestationTrustUpdateStrategy`, `ConfigDrivenAttestationTrustUpdateStrategy`, `IncrementalTrustUpdateListener`, `TrustScoreRecomputeService`; ~ `TrustScoreJob` refactored; ~ `LedgerEntryRepository` SPI + `findEventsByActorId`; ~ `LedgerConfig` + `update-trigger` key and `outcome.*` group; + EigenTrust startup validation |
+| `api` | + `OutcomeRecord` (Java record), `OutcomeRecorder`, `ReactiveOutcomeRecorder` |
+| `runtime` | + `DefaultOutcomeRecorder` (@DefaultBean), `OutcomeRecordSaveService` (package-private @Transactional), `BlockingToReactiveOutcomeRecorder` (@DefaultBean bridge); ~ `LedgerConfig` + `outcome.*` config group; + EigenTrust startup validation |
 | `deployment` | No changes |
-| `persistence-memory` | ~ `InMemoryLedgerEntryRepository`: fire `LedgerAttestationRecordedEvent` from `saveAttestation()`; + `findEventsByActorId()` impl |
+| `persistence-memory` | No changes |
 | Schema | No migrations |
 
 Legend: `+` = new, `~` = modified
+
+### Pre-existing methods referenced (not new)
+
+- `LedgerEntryRepository.saveAttestation()` — already exists; `DefaultOutcomeRecorder` calls it
+- `LedgerEntryRepository.findAttestationsForEntries()` — already exists; `TrustScoreJob` calls it
+- `TrustScoreJob.runComputation()` — unchanged; batch schedule is the trust freshness lever
