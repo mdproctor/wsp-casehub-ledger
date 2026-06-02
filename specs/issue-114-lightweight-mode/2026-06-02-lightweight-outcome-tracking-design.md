@@ -77,6 +77,7 @@ These requirements are satisfied by existing feature flags. **No new code.**
 | Skip agent signing | No key configured → `AgentSignatureEnricher` is a no-op | *(omit `casehub.ledger.agent-signing.keys.*`)* |
 | Skip DID/VC validation | No DID configured → identity enrichers are no-ops | *(omit `casehub.ledger.agent-identity.dids.*`)* |
 | In-memory persistence | `casehub-ledger-memory` on classpath | Add `casehub-ledger-memory` dependency |
+| Trust scoring enabled | `TrustScoreJob` gate | `casehub.ledger.trust-score.enabled=true` |
 | Short trust score interval | `TrustScoreJob` schedule | `casehub.ledger.trust-score.schedule=30s` |
 | Routing publisher active | `TrustScoreRoutingPublisher` gate | `casehub.ledger.trust-score.routing-enabled=true` |
 | EigenTrust disabled | Default | `casehub.ledger.trust-score.eigentrust.enabled=false` (default) |
@@ -325,7 +326,6 @@ is placed in the same package.
 class OutcomeRecordSaveService {
 
     @Inject LedgerEntryRepository ledgerRepo;
-    @Inject LedgerConfig config;
 
     @Transactional
     void save(OutcomeRecord record, AttestorDefaults attestor) {
@@ -596,7 +596,8 @@ tests where the scheduler is disabled via a test profile."
 **`TrustScoreComputerConfidenceTest`** (pure Java, no Quarkus) — verifying multi-granularity weighting:
 - Actor A: one SOUND attestation, `confidence=0.7`, `ageInDays=0` → alpha contribution ≈ 0.7
 - Actor B: one SOUND attestation, `confidence=0.1`, `ageInDays=0` → alpha contribution ≈ 0.1
-- Ratio of (A.alpha − prior) to (B.alpha − prior) = 7.0
+- `TrustScoreComputer` initialises α = β = 1.0 (Jeffreys prior); stored alpha includes the prior.
+  Assert: `(A.alpha − 1.0) / (B.alpha − 1.0) == 7.0` (i.e., `0.7 / 0.1`)
 - Uses `TrustScoreComputer` directly; verifiable because each actor has exactly one attestation
 
 ### Integration tests (`@QuarkusTest`, in-memory profile)
@@ -659,12 +660,21 @@ deployments running more than hours — `TrustScoreComputer` computes `ageInDays
 re-weighted on each batch run. CRDT bakes in `ageInDays=0` at record time and never
 corrects it.
 
-**`JpaLedgerEntryRepository.sequenceNumber` gap:** `InMemoryLedgerEntryRepository.save()`
+**`JpaLedgerEntryRepository.sequenceNumber` gap (casehubio/ledger#116):** `InMemoryLedgerEntryRepository.save()`
 assigns `sequenceNumber` via a `ConcurrentHashMap<UUID, AtomicInteger>`. `JpaLedgerEntryRepository.save()`
 does not currently assign `sequenceNumber` — it calls `em.persist(entry)` directly. This
 is a pre-existing gap in the JPA implementation, not introduced by `OutcomeRecorder`. JPA
 consumers must address `sequenceNumber` assignment before using `DefaultOutcomeRecorder`
 in production. Not in scope for this issue.
+
+**In-memory store memory growth for long-running processes (casehubio/ledger#117):**
+`InMemoryLedgerEntryRepository` accumulates entries indefinitely with no eviction or session-boundary
+reset. For QuarkMind's recommended per-game granularity (4 writes per game), growth is slow in
+practice. A `clear()` / reset mechanism or bounded window query (from #115) addresses this day-2.
+
+**On-read trust score computation (casehubio/ledger#118):** A `TrustSourceProvider` SPI in
+`casehub-engine` would let `TrustWeightedAgentStrategy` compute scores on demand from raw
+attestation history, eliminating staleness entirely. Requires a `casehub-engine` change.
 
 **`findEventsByActorId` on `LedgerEntryRepository`:** Was needed by the incremental
 pipeline, which is now descoped. The existing `findByActorId(actorId, from, to)` is
