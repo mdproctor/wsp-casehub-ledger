@@ -1,0 +1,8 @@
+branch: issue-105-106-reactive-parity
+project-sha: 5fc284a39a2e346eeb4fb184552440ac574109ca
+date: 2026-06-02
+issue: 106
+issue-repo: casehubio/ledger
+flyway-next-v: none
+design-repo: workspace
+design-section-hashes:
