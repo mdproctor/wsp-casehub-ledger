@@ -1,0 +1,8 @@
+branch: issue-117-in-memory-eviction
+project-sha: 275d29efda8497c249ee8df360c1e2416511c55f
+date: 2026-06-03
+issue: 117
+issue-repo: casehubio/ledger
+flyway-next-v: none
+design-repo: workspace
+design-section-hashes:
