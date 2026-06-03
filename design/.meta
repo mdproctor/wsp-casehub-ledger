@@ -1,0 +1,8 @@
+branch: issue-104-in-memory-agent-signer
+project-sha: 11eb619289a786d96a301fa365e3414f79655778
+date: 2026-06-03
+issue: 104
+issue-repo: casehubio/ledger
+flyway-next-v: none
+design-repo: workspace
+design-section-hashes:
