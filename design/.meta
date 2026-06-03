@@ -1,0 +1,8 @@
+branch: issue-119-eigentrust-startup-it
+project-sha: eec579e7cf4b4725fefc2da732b12253fbefb845
+date: 2026-06-03
+issue: 119
+issue-repo: casehubio/ledger
+flyway-next-v: none
+design-repo: workspace
+design-section-hashes:
