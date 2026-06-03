@@ -1,13 +1,11 @@
-# Design Journal — issue-99-native-image-flyway-resources
+# Design Journal — issue-104-in-memory-agent-signer
 
 ### 2026-06-03 · §10
 
-`LedgerProcessor` now produces `NativeImageResourcePatternsBuildItem` registering
-`db/ledger/migration/*.sql` for inclusion in native image builds. Without this
-`@BuildStep`, GraalVM's resource collection phase silently omits the SQL files —
-classpath scanning that works at JVM runtime is replaced at native-image time by
-a pre-registered list, and any resource not in that list is absent in the binary.
-The deployment module is the correct place for this registration: it is the
-build-time processor that knows which classpath paths the extension owns, and
-`NativeImageResourcePatternsBuildItem` is a deployment-module build item.
-Consumers do not need to add anything — the extension self-registers its own resources.
+`InMemoryAgentSigner` added to `persistence-memory` as `@Alternative @Priority(1) @ApplicationScoped`.
+Follows the module's displacement pattern: `ConfiguredAgentSigner @DefaultBean` is the
+production bean; `InMemoryAgentSigner` displaces it in tests via `quarkus.arc.selected-alternatives`.
+The implementation stays trivial (no caching, no lifecycle hooks) because its sole purpose
+is test isolation — tests call `register()` and `clear()` explicitly, which is more readable
+than auto-wiring or lifecycle-scoped setup. Signing delegates to `AgentSignature.signWith()`,
+preserving algorithm transparency (PP-20260523-e7b577).
