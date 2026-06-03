@@ -1,0 +1,8 @@
+branch: issue-99-native-image-flyway-resources
+project-sha: 21d7e1e69becf62b1ff65935e94359c0cce70df5
+date: 2026-06-03
+issue: 99
+issue-repo: casehubio/ledger
+flyway-next-v: none
+design-repo: project
+design-section-hashes:
