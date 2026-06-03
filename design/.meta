@@ -1,0 +1,8 @@
+branch: issue-105-reactive-attestation-persistence
+project-sha: 95c5724dbee070e0f6697007cb4c1319232cf70b
+date: 2026-06-03
+issue: 105
+issue-repo: casehubio/ledger
+flyway-next-v: none
+design-repo: workspace
+design-section-hashes:
