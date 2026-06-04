@@ -2,6 +2,7 @@
 
 | File | Date | Title |
 |------|------|-------|
+| [2026-06-04-mdp01-reading-the-ledger-backwards.md](2026-06-04-mdp01-reading-the-ledger-backwards.md) | 2026-06-04 | ARC42STORIES.MD completed from 16 blog entries; stale §1 terminology corrected; layer taxonomy (6 layers); C4 diagrams written inline |
 | [2026-06-02-mdp01-the-write-that-commits-before-returning.md](2026-06-02-mdp01-the-write-that-commits-before-returning.md) | 2026-06-02 | OutcomeRecorder + trust routing architecture; incremental pipeline descoped; PlainLedgerEntry spec correction; routing-enabled critical config; 604 tests green |
 | [2026-06-01-mdp01-the-infrastructure-that-found-its-address.md](2026-06-01-mdp01-the-infrastructure-that-found-its-address.md) | 2026-06-01 | Identity infrastructure extracted from ledger to casehub-platform-identity; platform ownership rule; IdentityCacheInvalidator bridge pattern; AgentIdentityVerificationService primitive signature; .m2 extension descriptor cache gotcha |
 | [2026-05-31-mdp01-cdi-event-scim-enterprise-identity.md](2026-05-31-mdp01-cdi-event-scim-enterprise-identity.md) | 2026-05-31 | CDI event-driven cache invalidation (#103), ScimActorDIDProvider SCIM2 enterprise DID lookup (#107), ReactiveAgentIdentityVerificationService @DefaultBean bridge (#109); ARC @Observes abstract class trap, URLEncoder + vs %20, @WithDefault("") SmallRye rejection |
