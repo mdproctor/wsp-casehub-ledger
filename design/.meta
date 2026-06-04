@@ -1,0 +1,9 @@
+branch: issue-116-jpa-sequence-number
+project-sha: b1ebe449e06e25ee6daad6b1a80e72b340853d34
+date: 2026-06-04
+issue: 116
+issue-repo: casehubio/ledger
+covers: 116
+flyway-next-v: unknown
+design-repo: project
+design-section-hashes:
