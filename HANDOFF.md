@@ -32,7 +32,6 @@ Both `mdproctor/ledger` and `casehubio/ledger` updated with force-push (`b1ebe44
 |---|-------------|-------|------------|-------|
 | #116 | JpaLedgerEntryRepository.save() sequenceNumber gap | M | Med | Self-contained; unblocks JPA consumers of OutcomeRecorder |
 | #115 | Incremental per-actor trust recomputation | L | High | Blocked on casehub-engine TrustScoreCache.refreshForActor companion |
-| — | QuarkMind: wire OutcomeRecorder into game loop | M | Low | Unblocked by #114; quarkmind-side change |
 
 ## References
 
