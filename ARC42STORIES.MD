@@ -4,7 +4,7 @@
 **Profile:** CaseHub — Foundation tier
 **Profile ref:** `../parent/docs/arc42stories-casehub-profile.md` · fallback: `https://raw.githubusercontent.com/casehubio/parent/main/docs/arc42stories-casehub-profile.md`
 **Build position:** Early foundation — no casehubio dependencies. Must publish before qhorus, eidos, engine, and all application-tier apps.
-**Consumed by:** casehub-qhorus (MessageLedgerEntry), casehub-eidos (runtime), casehub-engine (optional ledger integration), all application-tier harness apps
+**Consumed by:** casehub-qhorus (AgentMessageLedgerEntry), casehub-eidos (runtime), casehub-engine (optional ledger integration), all application-tier harness apps
 **Depends on:** None — zero casehubio dependencies.
 
 ---
@@ -19,8 +19,11 @@ Core capabilities:
 - `LedgerEntry` — abstract base entity (JPA JOINED inheritance); append-only, hash-chained; domain subclasses join on `id`
 - `LedgerAttestation` — peer attestation with verdict, confidence score, and `capabilityTag`
 - `LedgerMerkleFrontier` — stored Merkle Mountain Range frontier; at most log₂(N) rows per subject
-- `TrustScoreJob` — nightly Bayesian Beta + EigenTrust computation from `LedgerAttestation` records
-- `OutcomeRecord` / `DefaultOutcomeRecorder` — structured write API for routing-only agent outcome entries
+- `AgentSigner` SPI / `AgentSignatureEnricher` — bilateral Ed25519 signing per entry; algorithm-transparent; supports Vault Transit, Cloud KMS, HSMs
+- `KeyRotationEntry` / `KeyRotationService` — agent signing key rotation with SUSPECT verdict for entries in compromised windows
+- `ActorDIDEnricher` / `ActorIdentityValidationEnricher` — W3C DID/VC cryptographic identity binding; five-step validation pipeline; ENFORCE mode
+- `TrustScoreJob` — nightly four-pass computation: capability → dimension → CAPABILITY_DIMENSION → global; Bayesian Beta + optional EigenTrust
+- `OutcomeRecord` (api) / `DefaultOutcomeRecorder` (runtime) — structured write API for routing-only agent outcome entries
 - `ComplianceSupplement` — GDPR Art.22 decision context metadata
 - `ProvenanceSupplement` — source entity provenance + `agentConfigHash` for LLM config drift detection
 
@@ -71,7 +74,7 @@ C4Context
   System_Boundary(casehub, "casehub ecosystem") {
     System(ledger, "casehub-ledger", "Immutable audit ledger, Merkle chain integrity, Bayesian Beta + EigenTrust trust scoring, bilateral agent signing, DID/VC identity binding")
     System_Ext(work, "casehub-work", "WorkItemLedgerEntry — audit trail for work item lifecycle")
-    System_Ext(qhorus, "casehub-qhorus", "MessageLedgerEntry — per-speech-act audit trail")
+    System_Ext(qhorus, "casehub-qhorus", "AgentMessageLedgerEntry — per-speech-act audit trail")
     System_Ext(eidos, "casehub-eidos", "Runtime consumer — ledger extension on classpath")
     System_Ext(engine, "casehub-engine", "Optional trust integration via TrustScoreCache + TrustScoreFullPayload CDI events")
   }
@@ -95,7 +98,7 @@ C4Context
 | Consumer | Subclass | Subject maps to |
 |---|---|---|
 | `casehub-work` | `WorkItemLedgerEntry` | WorkItem UUID |
-| `casehub-qhorus` | `MessageLedgerEntry` | Channel UUID |
+| `casehub-qhorus` | `AgentMessageLedgerEntry` | Channel UUID |
 
 **Identity infrastructure:** SPIs and implementations for `ActorDIDProvider`, `DIDResolver`, `AgentCredentialValidator` live in `casehub-platform-identity`. `casehub-ledger` provides the enricher pipeline that wires identity into the write path.
 
@@ -115,6 +118,7 @@ See `../parent/docs/PLATFORM.md` Capability Ownership table for the full boundar
 | Merkle Mountain Range | `LedgerMerkleFrontier` — at most log₂(N) rows per subject; RFC 9162 domain-separated leaf hashes |
 | Algorithm-transparent signing | `AgentSigner.sign()` returns `AgentSignature`; enricher does not know the algorithm |
 | CDI event dispatch | `TrustScoreRoutingPublisher`, `AgentKeyRotatedEvent`, `AgentSignatureSuspectEvent`, `LedgerGapDetected` |
+| Reactive tier separation | Blocking-tier beans carry zero reactive imports; reactive beans excluded via `ExcludedTypeBuildItem` in `LedgerProcessor`; validated by `BlockingTierPurityTest` (reflection) and `BlockingReactiveParityTest` (ArchUnit); controlled by `LedgerBuildTimeConfig.reactive.enabled` |
 | Test isolation via module | `persistence-memory` provides `@Alternative @Priority(1)` in-memory implementations; no datasource required |
 
 ### Module Responsibilities
@@ -165,7 +169,7 @@ C4Container
     Container(runtime, "casehub-ledger (runtime)", "Java 21 / Quarkus 3.32.2", "JPA persistence, Merkle chain, trust scoring, signing, identity enrichers")
     Container(deployment, "casehub-ledger-deployment", "Java 21 / Quarkus build-time", "Build-time processor: feature registration, native image resources, reactive bean exclusion, Flyway location validation")
     Container(memory, "casehub-ledger-memory", "Java 21", "@Alternative in-memory repositories for @QuarkusTest — no datasource required")
-    ContainerDb(db, "PostgreSQL / H2", "SQL / Flyway V1000–V1009", "ledger_entry, ledger_attestation, actor_trust_score, ledger_merkle_frontier, key_rotation_entry, actor_identity_binding, plain_ledger_entry")
+    ContainerDb(db, "PostgreSQL / H2", "SQL / Flyway V1000–V1009", "ledger_entry, ledger_attestation, ledger_supplement_compliance, ledger_supplement_provenance, actor_identity, actor_trust_score, ledger_merkle_frontier, key_rotation_entry, actor_identity_binding, plain_ledger_entry")
   }
 
   Rel(consumers, runtime, "Depends on", "Maven compile")
@@ -209,6 +213,7 @@ C4Container
 | `InMemoryActorTrustScoreRepository` | Composite key: `actorId|scoreType|cap|dim` |
 | `InMemoryKeyRotationRepository` | Reads via `blocking.allEntries()` |
 | `InMemoryAgentSigner` | `register(actorId, keyPair)` + `clear()` for session-boundary state reset |
+| `InMemoryActorIdentityBindingRepository` | `@Alternative @Priority(1)`; in-memory identity binding history |
 
 ---
 
@@ -235,11 +240,14 @@ caller → LedgerEntryRepository.save(entry)
 ```
 TrustScoreJob (@Scheduled)
   → Phase 1: capability pass
-      per actorId × capabilityTag: TrustScoreComputer.compute(attestations) → Beta(α, β)
+      per actorId × capabilityTag: AttestationAggregator collapses (entryId, capabilityTag) groups
+      TrustScoreComputer.compute(aggregated) → Beta(α, β) per CAPABILITY score row
   → Phase 2: dimension pass
-      per actorId × dimension: TrustScoreComputer.computeDimensionScore(attestations, DecayFunction)
-  → Phase 3: global pass
-      GlobalScoreStrategy.selectAttestations(all) → TrustScoreComputer.compute() → global score
+      per actorId × trustDimension: TrustScoreComputer.computeDimensionScore(raw, DecayFunction) → DIMENSION score row
+  → Phase 3: CAPABILITY_DIMENSION pass
+      per actorId × capabilityTag × trustDimension: decay-weighted average → CAPABILITY_DIMENSION score row (ADR 0010)
+  → Phase 4: global pass
+      GlobalScoreStrategy.selectAttestations(all) → TrustScoreComputer.compute() → GLOBAL score row
       EigenTrustComputer (if eigentrust-enabled=true) — power iteration → global eigenvector components
   → TrustScoreRoutingPublisher.publish() (if routing-enabled=true)
       fire(TrustScoreFullPayload)      — @Observes: rebuild full ranked list
@@ -312,7 +320,7 @@ Published to GitHub Packages. CI: GitHub Actions. No GraalVM native target (foun
 - **Flyway V-number collision — subclass table before base schema**
   - **Symptom:** `Table "LEDGER_ENTRY" not found` at Quarkus startup; passes on dev machine, fails on CI or after `mvn clean`
   - **Cause:** Flyway merges all classpath migration files globally and sorts by version number; a consumer subclass join table at V5 runs before the extension base schema at V1000
-  - **Fix:** Consumer subclass join tables must use version numbers ≥ V1002; ledger base schema (V1000–V1009) always runs first
+  - **Fix:** Consumer subclass join tables must use version numbers ≥ V1004 (V1000–V1003 are reserved for the base extension); ledger base schema (V1000–V1009) always runs first
 
 - **Hardcoding a named persistence unit in extension beans**
   - **Symptom:** `Unsatisfied dependency for type EntityManager and qualifiers [@PersistenceUnit("qhorus")]` for any consumer that is not Qhorus
@@ -338,6 +346,21 @@ Published to GitHub Packages. CI: GitHub Actions. No GraalVM native target (foun
   - **Symptom:** `TrustScoreCache` never refreshes; `TrustGateService` always returns the cold-start score; no error logged
   - **Cause:** `TrustScoreRoutingPublisher.publish()` returns at its first line when the flag is false
   - **Fix:** Set `casehub.ledger.trust-score.routing-enabled=true` in `application.properties`
+
+- **CDI proxy field access writes to the proxy, not the singleton**
+  - **Symptom:** `bean.field = value` in a test appears to set the field; later reads see the original value; field stays at its default
+  - **Cause:** Arc CDI proxy beans intercept method calls but not direct field accesses; writing `proxy.field` writes to the proxy object's own field, not the underlying application-scoped singleton's field; the singleton is never updated
+  - **Fix:** Never access entity or `@ApplicationScoped` bean fields directly from outside the class; expose mutation via methods; in tests, call the setter or use a purpose-built lifecycle method (`clear()`, `register()`)
+
+- **Jandex index missing — `@Alternative` beans not discovered from external JAR**
+  - **Symptom:** `Unsatisfied dependency` for a repository at startup even though `casehub-ledger-memory` is on the classpath with the correct Maven scope
+  - **Cause:** Quarkus build-time augmentation requires a Jandex index inside the JAR to discover `@Alternative` beans from external dependencies; without the index, Arc cannot see the beans regardless of Maven scope
+  - **Fix:** Ensure `casehub-ledger-memory` is built with the `jandex-maven-plugin` generating `META-INF/jandex.idx`; verify with `jar tf casehub-ledger-memory-*.jar | grep jandex`
+
+- **JBoss LogManager handler chain reset during Quarkus bootstrap**
+  - **Symptom:** Log handler installed in `QuarkusTestResourceLifecycleManager.start()` captures nothing; the test's log assertions always fail even when the log message is genuinely emitted
+  - **Cause:** JBoss LogManager re-initialises its handler chain during Quarkus bootstrap, after `start()` returns; any handler added before bootstrap fires on a discarded logger instance
+  - **Fix:** Do not rely on log capture for startup event tests; instead verify startup behaviour through CDI wiring (bean present and injectable) + config resolution + explicit unit tests of the startup logic itself
 
 ---
 
@@ -627,7 +650,7 @@ Published to GitHub Packages. CI: GitHub Actions. No GraalVM native target (foun
 | Status | ✅ |
 | Delivered | 2026-05 |
 | Issues | #91, #117 |
-| Blog | — |
+| Blog | `2026-05-23-mdp02-persistence-layer-didnt-know.md` |
 
 **What this delivers:** `persistence-memory` module provides `@Alternative @Priority(1)` in-memory implementations for all repositories, enabling `@QuarkusTest` without a datasource. `InMemoryLedgerEntryRepository` runs the same enricher pipeline as the JPA path, preserving behavioral parity. `InMemoryAgentSigner.clear()` and `InMemoryLedgerEntryRepository.clear()` reset all state at session boundaries — documented as the lifecycle hook for test setup/teardown. Reactive delegates gated behind `@IfBuildProperty(casehub.ledger.reactive.enabled=true)`.
 
@@ -859,7 +882,7 @@ Not closed here: remote signer infrastructure (Vault Transit example in `example
 
 | File | What it is |
 |---|---|
-| `runtime/model/LedgerMerkleFrontier.java` | MMR frontier node entity; `subjectId`, `height`, `hashValue`; at most log₂(N) rows per subject |
+| `runtime/model/LedgerMerkleFrontier.java` | MMR frontier node entity; `subjectId`, `level`, `hash`; at most log₂(N) rows per subject |
 | `runtime/service/LedgerMerkleTree.java` | Pure static MMR algorithm; `canonicalBytes()` shared by signing enricher; `0x00` leaf prefix, `0x01` internal node prefix |
 | `runtime/service/LedgerVerificationService.java` | `treeRoot`, `inclusionProof`, `verify` — Merkle only; no reactive imports |
 | `runtime/service/LedgerMerklePublisher.java` | Ed25519 signed tlog-checkpoint (opt-in CDI bean) |
@@ -936,12 +959,16 @@ Not closed here: incremental per-actor recomputation (deferred to #115 — needs
 |---|---|
 | `runtime/service/TrustScoreComputer.java` | Bayesian Beta `compute` + decay-weighted `computeDimensionScore`; delegates to `DecayFunction` |
 | `runtime/service/EigenTrustComputer.java` | EigenTrust power iteration; pure Java, no CDI; uniform distribution for dangling nodes |
-| `runtime/service/TrustScoreJob.java` | `@Scheduled` nightly; three-pass: capability → dimension → global; calls routing publisher |
+| `runtime/service/TrustScoreJob.java` | `@Scheduled` nightly; four-pass: capability → dimension → CAPABILITY_DIMENSION → global; calls routing publisher |
 | `runtime/service/TrustGateService.java` | `meetsThreshold`, `currentScore`, `dimensionScore`, `allCapabilityScores(actorId)` |
 | `runtime/service/GlobalScoreStrategy.java` | SPI: `selectAttestations` + `derive`; three impls: `AllAttestations @DefaultBean`, `ExplicitGlobal @Alternative`, `FrequencyWeighted @Alternative` |
 | `runtime/service/DecayFunction.java` | SPI: `(ageInDays, verdict) → weight`; `ExponentialDecayFunction @DefaultBean` |
 | `runtime/service/routing/TrustScoreRoutingPublisher.java` | Fires three CDI event types; pre-checks observers at `@PostConstruct` |
 | `runtime/service/AttestationAggregator.java` | Collapses `(entryId, capabilityTag)` groups into consensus verdict |
+| `runtime/service/federation/TrustExportService.java` | CDI bean: `exportAll`, `exportActor`, `exportDelta` — structured trust read-model |
+| `runtime/service/federation/TrustImportService.java` | SPI: `importTrust(TrustExportPayload)` — merge strategy; `NoOpTrustImportService @DefaultBean`, `JpaTrustImportService @Alternative` |
+| `runtime/service/federation/TrustBootstrapService.java` | CDI bean: `bootstrapIfNew(Set<actorId>)` — wired into `TrustScoreJob` pre-pass |
+| `runtime/service/federation/TrustBootstrapSource.java` | SPI: `fetchPriorTrust(actorId)` → `Optional<TrustExportPayload>`; `NoOpTrustBootstrapSource @DefaultBean` |
 
 **Key wiring:**
 
@@ -957,6 +984,8 @@ Not closed here: incremental per-actor recomputation (deferred to #115 — needs
 **Why `GlobalScoreStrategy` SPI rather than picking one paper's formula:** Wang & Vassileva (2003), Fan et al. (2015), and Jøsang's Beta Reputation System each prescribe incompatible approaches. The correct strategy is a semantic deployment question. Tradeoff: three implementations ship and the default must be documented.
 
 **Why `NULLS NOT DISTINCT` for `scope_key` but `"*"` sentinel for `capabilityTag`:** `scope_key` nullable with `UNIQUE NULLS NOT DISTINCT` solves a uniqueness constraint problem without polluting query logic. `capabilityTag` is `NOT NULL DEFAULT '*'` because mixing `IS NULL` with `=` across all attestation query paths creates path-dependent behaviour at scale. The right constraint solver is not the right query operator.
+
+**Why four score types (GLOBAL, CAPABILITY, DIMENSION, CAPABILITY_DIMENSION) rather than two (GLOBAL, CAPABILITY):** DIMENSION captures continuous quality signals (latency, error rate) that are meaningful across all capabilities; CAPABILITY_DIMENSION captures the intersection — e.g., a specific agent's response-time quality within the "security-review" capability only. The two-column key schema (`capability_key`, `dimension_key`) represents all four types with `UNIQUE NULLS NOT DISTINCT` enforcing the invariants (ADR 0010 superseding ADR 0006). Tradeoff: four row types per actor × capability × dimension can grow large for deployments with many capabilities and many quality dimensions.
 
 **Gotchas:**
 
@@ -1026,9 +1055,9 @@ Not closed here: SCIM2 enterprise provisioning flow — operator configures `Sci
 
 **What it adds:**
 
-Before: no structured decision context storage; OTel trace ID must be set manually by every caller; no provenance graph export.
+Before: no structured decision context storage; OTel trace ID must be set manually by every caller; no provenance graph export; no compliance report API.
 
-After: `ComplianceSupplement` stores GDPR Art.22 fields lazily. `ProvenanceSupplement` stores source entity provenance + `agentConfigHash`. `LedgerRetentionJob` archives and deletes entries past the Art.12 window. `LedgerProvExportService` exports W3C PROV-JSON-LD per subject with agent deduplication. `LedgerTraceListener` auto-populates `traceId` from the active OTel span.
+After: `ComplianceSupplement` stores GDPR Art.22 fields lazily. `ProvenanceSupplement` stores source entity provenance + `agentConfigHash`. `LedgerRetentionJob` archives and deletes entries past the Art.12 window. `LedgerProvExportService` exports W3C PROV-JSON-LD per subject with agent deduplication. `LedgerTraceListener` auto-populates `traceId` from the active OTel span. `@ProvenanceCapture` CDI interceptor binding populates `ProvenanceContext` ThreadLocal so any method annotated with `@ProvenanceCapture` automatically enriches the next `LedgerEntry.save()` with provenance metadata. `LedgerComplianceReportService` produces structured compliance reports (`reportForActor`, `reportForSubject`) in plain JSON, JSON-LD, or CSV.
 
 Not closed here: per-entry PROV-DM export (current API is per-subject only).
 
@@ -1043,6 +1072,12 @@ Not closed here: per-entry PROV-DM export (current API is per-subject only).
 | `runtime/service/LedgerRetentionJob.java` | `@Scheduled` daily; archives + deletes past retention window |
 | `runtime/service/LedgerTraceListener.java` | `@ApplicationScoped @EntityListeners`; reads `Span.current()` at `@PrePersist`; noop span yields null safely |
 | `runtime/service/OtelTraceIdProvider.java` | SPI: current OTel span reader; overridable for custom trace sources |
+| `runtime/service/intercept/ProvenanceCapture.java` | CDI interceptor binding (`@InterceptorBinding`); attributes `sourceEntityType`, `sourceEntitySystem` |
+| `runtime/service/intercept/ProvenanceCaptureInterceptor.java` | CDI interceptor: pushes `ProvenanceContext` before proceed, pops in finally |
+| `runtime/service/intercept/ProvenanceCaptureEnricher.java` | `LedgerEntryEnricher`: attaches `ProvenanceSupplement` from active `ProvenanceContext` |
+| `runtime/service/intercept/ProvenanceContext.java` | `@ApplicationScoped` `static ThreadLocal` stack — supports nested `@ProvenanceCapture` scopes; uses `static ThreadLocal` not `@RequestScoped` to work in scheduled jobs and `@QuarkusTest` without HTTP |
+| `runtime/service/intercept/SourceEntityId.java` | Parameter annotation: marks the UUID to use as `sourceEntityId` |
+| `runtime/service/LedgerComplianceReportService.java` | CDI bean: `reportForActor` / `reportForSubject` → `ComplianceReport`; formats: `PLAIN_JSON`, `JSON_LD`, `CSV` |
 
 **Key wiring:**
 
@@ -1050,11 +1085,12 @@ Not closed here: per-entry PROV-DM export (current API is per-subject only).
 |---|---|---|
 | `LedgerTraceListener @ApplicationScoped` | Quarkus wires CDI into entity listener lifecycle; standard JPA does not support injection in entity listeners | `LedgerTraceListener` |
 | `Span.wrap(spanContext).makeCurrent()` in tests | Creates active OTel trace context from `SpanContext` without SDK or configured tracer | `LedgerTraceListenerTest` |
+| `ProvenanceContext` uses `static ThreadLocal` not `@RequestScoped` | `@RequestScoped` context is absent in `@Scheduled` jobs and `@QuarkusTest` without HTTP; `static ThreadLocal` is always accessible regardless of CDI scope | `ProvenanceContext` |
 
 **Gotchas:**
 
 - **CDI entity listener not injected in plain JPA**
-  - **Symptom:** `LedgerTraceIdProvider` is null; `NullPointerException` at first save
+  - **Symptom:** `OtelTraceIdProvider` is null; `NullPointerException` at first save
   - **Cause:** Standard JPA providers instantiate entity listeners themselves with no injection support
   - **Fix:** Ensure `LedgerTraceListener` is `@ApplicationScoped` — Quarkus detects the CDI scope and enables injection
 
@@ -1076,7 +1112,7 @@ Not closed here: incremental per-actor trust recomputation (deferred to #115).
 
 | File | What it is |
 |---|---|
-| `runtime/service/OutcomeRecord.java` | Java record; compact constructor validation; `of()` requires capability tag; `ofGlobal()` for intentional GLOBAL writes |
+| `api/src/main/java/.../model/OutcomeRecord.java` | Java record (api module); compact constructor validation; `of()` requires capability tag; `ofGlobal()` for intentional GLOBAL writes |
 | `runtime/service/DefaultOutcomeRecorder.java` | `@DefaultBean @ApplicationScoped`; NOT `@Transactional`; delegates to `OutcomeRecordSaveService` |
 | `runtime/service/OutcomeRecordSaveService.java` | `@Transactional`; builds `PlainLedgerEntry`; calls `LedgerEntryRepository.save()` |
 | `runtime/model/PlainLedgerEntry.java` | `@Entity @DiscriminatorValue("PLAIN")`; empty body; concrete JOINED subclass for routing-only entries |
@@ -1104,13 +1140,29 @@ Per the Arc42Stories spec: only decisions not captured inline elsewhere.
 
 `InMemoryAgentSigner` added to `persistence-memory` as `@Alternative @Priority(1) @ApplicationScoped`. Follows the module's displacement pattern: `ConfiguredAgentSigner @DefaultBean` is the production bean; `InMemoryAgentSigner` displaces it in tests via `quarkus.arc.selected-alternatives`. The implementation stays trivial (no caching, no lifecycle hooks) because its sole purpose is test isolation — tests call `register()` and `clear()` explicitly, which is more readable than auto-wiring or lifecycle-scoped setup. Signing delegates to `AgentSignature.signWith()`, preserving algorithm transparency (PP-20260523-e7b577). (Closes ledger#104.)
 
-### 2026-05-04 — GlobalScoreStrategy SPI (ADR 0008)
+### 2026-05-03 — GlobalScoreStrategy SPI (ADR 0008)
 
 Three peer-reviewed papers on global trust aggregation (Wang & Vassileva 2003, Fan et al. 2015, Jøsang Beta Reputation System) prescribe incompatible formulas. No single paper's approach is correct for all deployments — the strategy is a semantic question about what "global trust" means for that deployment. Three implementations ship: `AllAttestationsGlobalStrategy @DefaultBean` (Wang & Vassileva root-node model), `ExplicitGlobalAttestationsStrategy @Alternative` (only `"*"`-tagged attestations), `FrequencyWeightedGlobalStrategy @Alternative` (Fan et al. frequency-weighted). Deployments switch via `quarkus.arc.selected-alternatives` — no code change, no rebuild. (Closes ledger#61.)
 
 ### 2026-05-29 — AgentSigner SPI replacing AgentKeyProvider (ADR 0014)
 
 `AgentKeyProvider.signingKey(actorId) → Optional<SigningKey>` returned a `KeyPair` and required local signing — incompatible with Vault Transit, Cloud KMS, and HSMs where the private key never leaves the service. Replaced with `AgentSigner.sign(actorId, data) → Optional<AgentSignature>`. The signing boundary moves into the SPI; the enricher receives a result and stores three fields without knowing the algorithm. `keyRef` self-derived: `Base64URL(SHA-256(publicKey.getEncoded()))`. PQC migration requires no enricher changes. (Closes ledger#85.)
+
+### 2026-05-04 — Continuous quality dimension scores use decay-weighted average, not Beta (ADR 0009)
+
+`trustDimension` and `dimensionScore` on `LedgerAttestation` record continuous quality signals (latency, error rate) rather than verdict-based attestations. These cannot be modelled as Beta(α, β) because they are not binomial outcomes. The DIMENSION and CAPABILITY_DIMENSION passes use a decay-weighted average (consistent with `computeDimensionScore`) rather than `TrustScoreComputer.compute()`. Consequence: dimension scores are not directly comparable to capability Beta scores; they are quality signals, not reliability scores.
+
+### 2026-04-29 — Two-column key schema replaces composite string scope_key (ADR 0010)
+
+The original `actor_trust_score` schema used a single `scope_key VARCHAR(255)` to encode all four score types by convention. This created fragile string-parsing logic in queries and violated NULL semantics across score types. Replaced with two explicit nullable columns: `capability_key` (NULL for GLOBAL and DIMENSION rows) and `dimension_key` (NULL for GLOBAL and CAPABILITY rows). A `UNIQUE NULLS NOT DISTINCT` constraint on `(actor_id, score_type, capability_key, dimension_key)` enforces uniqueness correctly. ADR 0010 supersedes ADR 0006.
+
+### 2026-06-02 — EigenTrust inapplicability criteria for single-attestor deployments (ADR 0016)
+
+EigenTrust requires at least 3–5 independent attestors and ~10 distinct actors with meaningful transitive relationships to produce useful results. In a single-attestor deployment (e.g., QuarkMind with one game-loop attestor), all trust matrix rows for non-attestors are zero — EigenTrust degenerates to the pre-trusted distribution and adds no signal over Bayesian Beta. ADR 0016 formalises applicability criteria and confirms that `eigentrust-enabled=false` is correct for single-attestor deployments. The dangling-node convergence fix (uniform 1/n) resolves oscillation for small meshes but does not make EigenTrust useful when transitive relationships are absent.
+
+### 2026-06-02 — PlainLedgerEntry as domain-agnostic concrete subclass (ADR 0017)
+
+`LedgerEntry` is abstract — `@Entity @Inheritance(JOINED)` with no concrete implementation. `OutcomeRecordSaveService` needs to instantiate a concrete subclass for routing-only entries that have no domain-specific columns. Rather than require each consumer to provide a concrete subclass for this use case, `PlainLedgerEntry` ships in the extension as `@Entity @DiscriminatorValue("PLAIN")` with an empty body and a single-FK join table (V1009). Consequence: any deployment using `DefaultOutcomeRecorder` automatically gets a `plain_ledger_entry` table. Consumers that do not use `OutcomeRecord` still get the table created; it will be empty.
 
 ---
 
@@ -1137,7 +1189,8 @@ Three peer-reviewed papers on global trust aggregation (Wang & Vassileva 2003, F
 | Incremental per-actor trust recomputation | Debt | Open (#115) | Nightly `TrustScoreJob` sufficient for current consumers; incremental path needs `casehub-engine` `TrustScoreCache.refreshForActor` companion before it makes sense |
 | `JpaLedgerEntryRepository.save()` sequenceNumber gap | Risk | Open (#116) | Under concurrent saves two entries can receive the same `seqNum` before the INSERT constraint fires; blocks JPA consumers of `OutcomeRecorder` at scale |
 | `FrequencyWeightedGlobalStrategy` alpha/beta inconsistency | Known limitation | Documented | `trustScore` computed correctly; `alpha`/`beta` stored fields do not satisfy `alpha/(alpha+beta) == trustScore`; documented in class Javadoc |
-| EigenTrust oscillation in small meshes | Known | Fixed | Stanford paper's matrix-row recommendation causes 3-cycles; fixed with uniform distribution (1/n) for dangling nodes |
+| EigenTrust inapplicability in single-attestor deployments | Known | Documented (ADR 0016) | EigenTrust requires ≥3–5 independent attestors and ~10 actors with meaningful transitive relationships; degenerates to pre-trusted distribution in single-attestor cases; `eigentrust-enabled=false` is correct default for most current deployments |
+| EigenTrust oscillation in small meshes | Known | Fixed | Stanford paper's matrix-row recommendation for dangling nodes causes 3-cycles; fixed with uniform distribution (1/n) |
 | SCIM2 agent provisioning | Planned | Partially delivered (#107) | `ScimActorDIDProvider` ships; operator provisioning workflow tracked in `casehubio/parent` |
 
 ---
@@ -1169,7 +1222,12 @@ Three peer-reviewed papers on global trust aggregation (Wang & Vassileva 2003, F
 | `TrustGateService` | CDI bean — `meetsThreshold`, `currentScore`, `dimensionScore`, `allCapabilityScores(actorId)` for routing consumers |
 | `EigenTrustComputer` | Pure Java — PageRank-style transitive trust via power iteration; uniform distribution (1/n) for dangling-node convergence |
 | `@LedgerPersistenceUnit` | CDI qualifier — selects `EntityManager` for the configured persistence unit; avoids hardcoding consumer datasource names in extension beans |
+| `AgentMessageLedgerEntry` | `casehub-qhorus` subclass of `LedgerEntry` — per-speech-act audit trail; fields: `toolName`, `durationMs`, `tokenCount`, `contextRefs`, `sourceEntity` |
+| `CAPABILITY_DIMENSION` score type | `ActorTrustScore.ScoreType` — per-actor quality dimension score scoped to a specific capability tag; intersection of CAPABILITY and DIMENSION scoring |
+| `trustDimension` | Field on `LedgerAttestation` — names the quality dimension being measured (e.g., `"latency"`, `"error-rate"`); NULL means no dimension tagging |
+| `@ProvenanceCapture` | CDI interceptor binding — annotate a method to automatically populate `ProvenanceSupplement` on the next `LedgerEntry.save()` within the same thread via `ProvenanceContext` ThreadLocal |
+| `ProvenanceContext` | `@ApplicationScoped` ThreadLocal stack — holds active provenance metadata; uses `static ThreadLocal` (not `@RequestScoped`) to work in scheduled jobs |
 
 ---
 
-*ARC42STORIES.MD — completed 2026-06-04.*
+*ARC42STORIES.MD — completed 2026-06-04. Reviewed and corrected 2026-06-04 against all 40 blogs, DESIGN.md, DESIGN-capabilities.md, CAPABILITIES.md, ADRs 0001–0017, design specs, and integration guide.*
