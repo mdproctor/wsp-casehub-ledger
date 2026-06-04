@@ -18,7 +18,7 @@
 
 `InMemoryLedgerEntryRepository.save()` handles this correctly via `ConcurrentHashMap<UUID, AtomicInteger>` keyed by `subjectId`.
 
-**Downstream beneficiaries:** `KeyRotationEntry` and `ActorIdentityBindingEntry` are both `LedgerEntry` subclasses persisted through the same `save()` path. Their `subjectId` is derived from `actorId` via `UUID.nameUUIDFromBytes()`. Both have had the same `sequenceNumber = 0` bug.
+**Downstream beneficiaries:** `KeyRotationEntry` is a `LedgerEntry` subclass persisted through the same `save()` path. Its `subjectId` is derived from `actorId` via `UUID.nameUUIDFromBytes()`. It has had the same `sequenceNumber = 0` bug.
 
 ## Ordering Constraint
 
@@ -93,17 +93,27 @@ private int nextSequenceNumber(UUID subjectId) {
 }
 ```
 
-**H2 compatibility:** The test suite runs on H2 2.4.240 in `MODE=PostgreSQL`. This is the first native SQL in the codebase — there is no existing precedent confirming H2 handles `INSERT ON CONFLICT DO UPDATE ... RETURNING` correctly. A spike test (test #0 in the test plan) must verify this syntax executes without error on H2 before any other implementation proceeds. If H2 rejects this syntax, the fallback is SQL-standard `MERGE INTO`:
+**H2 compatibility:** The test suite runs on H2 2.4.240 in `MODE=PostgreSQL`. This is the first native SQL in the codebase — there is no existing precedent confirming H2 handles this syntax. Test #0 (spike) must verify before any implementation proceeds. The spike cascades through three syntax levels:
+
+1. **`INSERT ON CONFLICT DO UPDATE ... RETURNING`** (preferred — single statement)
+2. **SQL-standard `MERGE INTO ... USING ... WHEN MATCHED/NOT MATCHED`** (fallback — two statements, MERGE + SELECT)
+3. **H2-native `MERGE INTO ... KEY(col) VALUES(...)`** (last resort — H2 proprietary, two statements)
 
 ```sql
+-- Fallback 1: SQL-standard MERGE
 MERGE INTO ledger_subject_sequence AS t
 USING (VALUES (?1)) AS s(subject_id)
 ON t.subject_id = s.subject_id
 WHEN MATCHED THEN UPDATE SET next_seq = t.next_seq + 1
 WHEN NOT MATCHED THEN INSERT (subject_id, next_seq) VALUES (s.subject_id, 2)
+
+-- Fallback 2: H2-native MERGE
+MERGE INTO ledger_subject_sequence KEY(subject_id) VALUES (?1, 2)
 ```
 
-`MERGE` has the same transactional semantics (row lock on match, insert on miss) but does not support `RETURNING`, requiring a follow-up `SELECT` to read the allocated value.
+All three have equivalent transactional semantics. Fallbacks 1 and 2 require a follow-up `SELECT next_seq - 1 FROM ledger_subject_sequence WHERE subject_id = ?1` to read the allocated value.
+
+**JPA provider note:** `em.createNativeQuery("INSERT ... RETURNING ...").getSingleResult()` treats the statement as a query (returning a result set). Hibernate handles this for PostgreSQL, but H2's JDBC driver may treat `INSERT ... RETURNING` as DML, causing a "not a query" error from `getSingleResult()`. If this occurs, the graceful degradation is `executeUpdate()` for the UPSERT + a separate `SELECT` — effectively the two-statement approach. Test #0 covers this.
 
 ### Concurrency Behavior
 
@@ -160,7 +170,8 @@ Changes from current:
 > Persists a ledger entry with automatic sequence number assignment. The repository
 > assigns `sequenceNumber` based on the entry's `subjectId` — any value set by the
 > caller is overwritten. Sequence numbers are monotonically increasing and contiguous
-> per subject within committed transactions.
+> on insert within committed transactions. Retention deletion may remove entries from
+> the start of the sequence without breaking the contiguity invariant for gap detection.
 
 Same contract documented on `ReactiveLedgerEntryRepository.save()`.
 
@@ -194,7 +205,7 @@ Issue #100 describes the same root cause from the consumer side: casehub-engine'
 
 ## Tests
 
-0. **H2 syntax spike** — Execute the native `INSERT ON CONFLICT DO UPDATE RETURNING` SQL against H2 `MODE=PostgreSQL`. Assert it executes without error and returns the correct value. This runs first — if it fails, switch to the `MERGE INTO` fallback before proceeding with any other test.
+0. **H2 syntax spike** — Cascading syntax test against H2 `MODE=PostgreSQL`. Try in order: (a) `INSERT ON CONFLICT DO UPDATE RETURNING` via `getSingleResult()`, (b) same UPSERT via `executeUpdate()` + separate SELECT, (c) SQL-standard `MERGE INTO ... USING ... WHEN MATCHED`, (d) H2-native `MERGE INTO ... KEY(...)`. Document whichever works and use it for the implementation. This gates all other tests.
 
 1. **JPA sequence assignment** — Persist multiple entries for the same subject via JPA. Assert `sequenceNumber` values are 1, 2, 3, ... Assert ordering via `findBySubjectId()` matches insertion order.
 
@@ -213,6 +224,8 @@ Issue #100 describes the same root cause from the consumer side: casehub-engine'
 8. **LedgerHealthJob integration** — Save N entries via JPA for a single subject. Run `LedgerHealthJob` gap detection. Assert no gap detected — confirms JPA-assigned sequences satisfy the health job's contiguity assumption.
 
 9. **subjectId null guard** — Call `save()` with `subjectId = null`. Assert `IllegalArgumentException` with clear message.
+
+10. **Concurrency (deferred to #122)** — Spin up N threads, each calling `save()` for the same `subjectId`. Assert all N entries get distinct, contiguous sequence numbers with zero constraint violations. This is the spec's central behavioral guarantee but cannot be meaningfully tested on H2 — H2's locking semantics under concurrent JDBC connections do not match PostgreSQL's row-level locking. Deferred to #122 (PostgreSQL DevServices) where real row locking can be validated.
 
 ## Protocol Coherence
 
