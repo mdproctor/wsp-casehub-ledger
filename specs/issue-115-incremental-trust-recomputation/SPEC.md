@@ -42,7 +42,7 @@ public record AttestationRecordedEvent(
 ) {}
 ```
 
-`actorId` is the decision-maker (the LedgerEntry's actorId), not the attestor. Resolved at fire time by looking up the entry from `ledgerEntryId` — avoids an extra query in the observer.
+`actorId` is the decision-maker (the LedgerEntry's actorId), not the attestor. Resolved at fire time by looking up the entry from `ledgerEntryId` — avoids an extra query in the observer. If the entry lookup returns null (invalid `ledgerEntryId`), the event is not fired and a warning is logged.
 
 ### `TrustScoreActorUpdatedEvent` — `runtime/service/routing/`
 
@@ -72,6 +72,15 @@ Package-private CDI bean extracted from `TrustScoreJob.runComputation()`. Encaps
 2. **Dimension pass** — group by trustDimension, decay-weighted average via `computeDimensionScore()`, upsert DIMENSION rows
 3. **Capability×Dimension pass** — group by (capabilityTag, trustDimension), upsert CAPABILITY_DIMENSION rows
 4. **Global pass** — `GlobalScoreStrategy.selectAttestations()` + `derive()`, upsert GLOBAL row
+
+`actorType` is resolved internally from the decisions list (first non-null `actorType`, defaulting to `ActorType.HUMAN`) — same logic as `TrustScoreJob` lines 139–143.
+
+**Injections:**
+- `DecayFunction` — to construct `TrustScoreComputer`
+- `ActorTrustScoreRepository` — for score upserts
+- `GlobalScoreStrategy` — for global pass (selectAttestations + derive)
+- `AttestationAggregator` — for `buildEffectiveAttestations` (moves here from `TrustScoreJob`)
+- `LedgerConfig` — for `aggregationStrategy()`
 
 Signature:
 
@@ -124,15 +133,15 @@ Returns all EVENT-type entries for one actor. Used by the incremental observer a
 
 ### `JpaLedgerEntryRepository`
 
-- Implement `findEventsByActorId` via named query on `LedgerEntry`
+- Implement `findEventsByActorId` via named query on `LedgerEntry`. The implementation calls `actorIdentityProvider.tokeniseForQuery(actorId)` before querying — consistent with every existing actor-scoped query method (e.g. `findByActorId` line 228). The incremental observer passes an already-tokenised actorId (read from a persisted entry), but tokenising in the repository ensures correctness for any future caller.
 - Inject `Event<AttestationRecordedEvent>`
-- Fire event from `saveAttestation()` after persist, resolving `actorId` from the entry
+- Fire event from `saveAttestation()` after persist. Resolve `actorId` via `em.find(LedgerEntry.class, attestation.ledgerEntryId)`. If the entry is null, skip event firing and log a warning.
 
 ### `InMemoryLedgerEntryRepository`
 
-- Implement `findEventsByActorId` by filtering `allEntries()`
+- Implement `findEventsByActorId` by filtering `allEntries()`. Apply `actorIdentityProvider.tokeniseForQuery(actorId)` for API consistency with the JPA implementation.
 - Inject `Event<AttestationRecordedEvent>`
-- Fire event from `saveAttestation()` after adding to the collection
+- Fire event from `saveAttestation()` after adding to the collection. Resolve `actorId` from the entry via the blocking delegate's `findEntryById()`. If the entry is null, skip event firing and log a warning.
 
 ### `TrustScoreJob`
 
