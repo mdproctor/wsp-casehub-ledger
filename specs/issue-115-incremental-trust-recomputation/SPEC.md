@@ -141,7 +141,7 @@ Returns all EVENT-type entries for one actor. Used by the incremental observer a
 
 - Implement `findEventsByActorId` by filtering `allEntries()`. Apply `actorIdentityProvider.tokeniseForQuery(actorId)` for API consistency with the JPA implementation.
 - Inject `Event<AttestationRecordedEvent>`
-- Fire event from `saveAttestation()` after adding to the collection. Resolve `actorId` from the entry via the blocking delegate's `findEntryById()`. If the entry is null, skip event firing and log a warning.
+- Fire event from `saveAttestation()` after adding to the collection. Resolve `actorId` from the entry via `findEntryById()`. If the entry is null, skip event firing and log a warning.
 
 ### `TrustScoreJob`
 
