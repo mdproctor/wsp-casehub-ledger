@@ -43,3 +43,4 @@
 | [2026-05-23-mdp01-the-missing-pem-loader.md](2026-05-23-mdp01-the-missing-pem-loader.md) | 2026-05-23 | Won't-do evaluation on platform-api migration; ArchUnit dead branch; PQC signing — LedgerPemUtil gap caught in review |
 | [2026-05-23-mdp02-persistence-layer-didnt-know.md](2026-05-23-mdp02-persistence-layer-didnt-know.md) | 2026-05-23 | In-memory persistence module: fixing EntityManager coupling in service layer, CDI proxy field access, bytecode enhancement surprises |
 | [2026-06-03-mdp01-the-log-that-wouldnt-be-caught.md](blog/2026-06-03-mdp01-the-log-that-wouldnt-be-caught.md) | 2026-06-03 | Six S-scale issues; JBoss LogManager startup log capture failure and workaround |
+| [2026-06-06-mdp01-the-observer-that-couldnt-wait.md](2026-06-06-mdp01-the-observer-that-couldnt-wait.md) | 2026-06-06 | Incremental per-actor trust recomputation — the AFTER_SUCCESS race condition, PerActorTrustComputer extraction, and CDI test transaction gotcha |
