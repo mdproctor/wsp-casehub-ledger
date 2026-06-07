@@ -10,13 +10,23 @@ The test suite uses H2 in `MODE=PostgreSQL`, which emulates PostgreSQL syntax bu
 
 ## Approach
 
-Add PostgreSQL as an **additive** test layer alongside the existing H2 suite. Tests that exercise native SQL opt in via a shared `PostgreSQLTestProfile` base class. H2 tests remain untouched. Coverage, not replacement.
+Add PostgreSQL as an **additive** test layer alongside the existing H2 suite. Tests that exercise native SQL or whose correctness depends on database-specific semantics opt in via a shared `PostgreSQLTestProfile` base class. H2 tests remain untouched. Coverage, not replacement.
 
 A `PostgreSQLTestResource` (implementing `QuarkusTestResourceLifecycleManager`) starts a Testcontainers `PostgreSQLContainer` and injects the JDBC URL, username, and password. Test resource config has the highest ordinal in the Quarkus config system — it cleanly overrides the H2 URL from `application.properties` without needing to "unset" properties.
 
 ### Why not Quarkus DevServices?
 
 DevServices auto-activates when no explicit JDBC URL is configured. But `application.properties` has an unqualified `quarkus.datasource.jdbc.url=jdbc:h2:mem:...` that applies to all profiles, and `QuarkusTestProfile.getConfigOverrides()` cannot unset properties — it can only override them with new values. Setting the URL to empty string still counts as "configured" and prevents DevServices auto-activation. Explicit `QuarkusTestResourceLifecycleManager` is the established pattern in this project (`ScimWireMockResource`) and avoids config override gymnastics.
+
+### What this validates beyond native SQL
+
+Every PostgreSQL test forces Flyway to run all V1000–V1008 migrations against real PostgreSQL. This validates database-specific features the H2 compatibility mode emulates but does not fully guarantee:
+
+- `NULLS NOT DISTINCT` (V1001) — PostgreSQL 15+ feature; H2 supports the syntax natively but has a [known bug](https://github.com/h2database/h2database/issues/4036) where the property is silently lost on column drops
+- `BYTEA` columns (V1005) — PostgreSQL binary type, mapped differently in H2
+- All `CHECK` constraints across V1005, V1006, V1008
+- `DOUBLE PRECISION` default values (V1000, V1001, V1002)
+- Index creation against the real PostgreSQL query planner
 
 ## Design
 
@@ -31,11 +41,11 @@ import org.testcontainers.postgresql.PostgreSQLContainer;
 
 public class PostgreSQLTestResource implements QuarkusTestResourceLifecycleManager {
 
-    static PostgreSQLContainer<?> container;
+    private PostgreSQLContainer<?> container;
 
     @Override
     public Map<String, String> start() {
-        container = new PostgreSQLContainer<>("postgres:16-alpine");
+        container = new PostgreSQLContainer<>("postgres:17-alpine");
         container.start();
         return Map.of(
             "quarkus.datasource.db-kind", "postgresql",
@@ -49,11 +59,16 @@ public class PostgreSQLTestResource implements QuarkusTestResourceLifecycleManag
     public void stop() {
         if (container != null) {
             container.stop();
-            container = null;
         }
     }
 }
 ```
+
+**Container field**: instance, not static — consistent with project convention (`ScimWireMockResource` uses `private WireMockServer server`). Quarkus creates one lifecycle manager instance per augmentation; `static` is unnecessary.
+
+**PostgreSQL 17**: current stable release. The codebase targets PostgreSQL 15+ (the minimum for `MERGE` support). Using 17 validates forward compatibility. The `-alpine` variant minimises image size for CI.
+
+**`db-kind` override**: setting `db-kind=postgresql` also changes the Hibernate dialect from H2 to PostgreSQL. Since `quarkus.hibernate-orm.database.generation=none` (Flyway manages schema), the dialect change only affects JPQL→SQL query generation, not DDL. This is safe — any JPQL dialect differences between H2 and PostgreSQL would surface here, which is additional coverage.
 
 Test resource config has ordinal ~`Integer.MAX_VALUE`, overriding both `application.properties` (250) and `getConfigOverrides()` (500). The H2 URL is cleanly replaced regardless of which named profile is active.
 
@@ -80,7 +95,7 @@ Location: `runtime/src/test/java/io/casehub/ledger/test/PostgreSQLTestProfile.ja
 
 ### Test variants via subclass inheritance
 
-Each PostgreSQL variant is a new test class that extends the original H2 test and overrides only the profile. All `@Test` methods are inherited — zero test logic duplication.
+Each PostgreSQL variant is a new test class that extends the original H2 test and overrides only the profile. All `@Test` methods are inherited — zero test logic duplication, with one exception noted below.
 
 ```java
 @QuarkusTest
@@ -95,12 +110,39 @@ class JpaSequenceNumberPgIT extends JpaSequenceNumberIT {
 }
 ```
 
+### Parent test fix: case-insensitive constraint assertion
+
+`JpaSequenceNumberIT.uniqueConstraintPreventsDuplicateSequenceNumber()` (line 137) asserts:
+```java
+.hasMessageContaining("IDX_LEDGER_ENTRY_SUBJECT_SEQ");
+```
+
+H2 uppercases all unquoted identifiers, so it reports `IDX_LEDGER_ENTRY_SUBJECT_SEQ`. PostgreSQL preserves case — it reports `idx_ledger_entry_subject_seq`. This assertion will fail when inherited by the PostgreSQL subclass.
+
+**Fix**: change the parent test to use a case-insensitive assertion:
+```java
+.hasMessageMatching("(?i).*idx_ledger_entry_subject_seq.*");
+```
+
+This makes the parent test portable across both databases. Since there are no deployed users, fixing the parent is the right design — no backward compatibility concern.
+
+### Test selection criteria
+
+Tests are selected for PostgreSQL variants when they meet either criterion:
+
+1. **Direct native SQL**: the test or the production code it exercises issues `createNativeQuery()` with database-specific syntax
+2. **Database-specific semantics**: the test's correctness depends on behaviour that differs between H2 and PostgreSQL (row locking, constraint enforcement timing, etc.)
+
+JPQL-only tests are excluded: Hibernate generates database-portable SQL from JPQL, so running them on PostgreSQL adds no coverage beyond the Flyway migration validation (which the selected tests already provide).
+
 ### Tests to port
 
 | Original | PostgreSQL variant | Reason |
 |----------|-------------------|--------|
-| `JpaSequenceNumberIT` | `JpaSequenceNumberPgIT` | Directly exercises `LedgerSequenceAllocator` MERGE INTO native SQL |
-| `LedgerHealthJobIT` | `LedgerHealthJobPgIT` | Uses native SQL UPDATE to simulate sequence gaps |
+| `JpaSequenceNumberIT` | `JpaSequenceNumberPgIT` | Validates that the SQL-standard `MERGE INTO ... AS t USING (SELECT CAST(?1 AS UUID) AS sid) AS s ON ...` syntax in `LedgerSequenceAllocator` works correctly on PostgreSQL 15+. This is the headline validation — the `MERGE` statement is the primary native SQL in production code. |
+| `LedgerHealthJobIT` | `LedgerHealthJobPgIT` | Uses native SQL `UPDATE ledger_entry SET sequence_number = ?1 WHERE id = ?2` to simulate sequence gaps for gap detection testing. |
+
+**Excluded**: `ActorTrustScoreRepositoryIT` uses JPQL (named queries via `em.createNamedQuery()`), not native SQL. The `NULLS NOT DISTINCT` unique constraint (V1001) is validated by Flyway migration success, which both selected tests already exercise. Adding a third variant would be diminishing returns.
 
 ### Dependencies
 
@@ -139,15 +181,16 @@ No CI configuration exists in this repo. PostgreSQL tests run as part of `mvn te
 | `runtime/src/test/java/io/casehub/ledger/runtime/repository/jpa/JpaSequenceNumberPgIT.java` | Extends JpaSequenceNumberIT |
 | `runtime/src/test/java/io/casehub/ledger/service/LedgerHealthJobPgIT.java` | Extends LedgerHealthJobIT |
 
-**Modified files (1):**
+**Modified files (2):**
 
 | File | Change |
 |------|--------|
 | `runtime/pom.xml` | Add `org.testcontainers:testcontainers-postgresql` test scope |
+| `runtime/src/test/java/.../JpaSequenceNumberIT.java` | Case-insensitive constraint name assertion (line 137) |
 
 ## Out of scope
 
 - Replacing H2 tests with PostgreSQL — additive only
 - Concurrent-write tests (#100) — separate issue, will use this infrastructure when implemented
 - CI matrix configuration — no CI exists yet; tests run in standard suite
-- Porting JPQL-only tests — no benefit from PostgreSQL in this iteration
+- Porting JPQL-only tests — no benefit beyond Flyway migration validation already provided by selected tests
