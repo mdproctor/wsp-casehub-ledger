@@ -1,0 +1,9 @@
+branch: issue-127-multi-tenancy
+project-sha: b7b31f4524c3087d8885acac4b627c4dabf4ed59
+date: 2026-06-08
+issue: 127
+issue-repo: casehubio/ledger
+covers: 127
+flyway-next-v: none
+design-repo: project
+design-section-hashes: b8abb050:## Purpose|398c5734:## Ecosystem Context|dfd43c88:## Further Reading|a7e56472:## Architecture|fe13706e:## Supplements|47572aa5:## Key Design Decisions|37f210b4:## Configuration|1cc6eabf:## What Is Deliberately Out of Scope|b9143874:## Roadmap|1428ecf0:## Implementation Tracker
