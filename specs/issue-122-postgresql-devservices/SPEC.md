@@ -22,7 +22,7 @@ DevServices auto-activates when no explicit JDBC URL is configured. But `applica
 
 Every PostgreSQL test forces Flyway to run all V1000–V1008 migrations against real PostgreSQL. This validates database-specific features the H2 compatibility mode emulates but does not fully guarantee:
 
-- `NULLS NOT DISTINCT` (V1001) — PostgreSQL 15+ feature; H2 supports the syntax natively but has a [known bug](https://github.com/h2database/h2database/issues/4036) where the property is silently lost on column drops
+- `NULLS NOT DISTINCT` (V1001) — PostgreSQL 15+ feature; H2 emulates the syntax but PostgreSQL is the ground truth
 - `BYTEA` columns (V1005) — PostgreSQL binary type, mapped differently in H2
 - All `CHECK` constraints across V1005, V1006, V1008
 - `DOUBLE PRECISION` default values (V1000, V1001, V1002)
@@ -128,19 +128,20 @@ This makes the parent test portable across both databases. Since there are no de
 
 ### Test selection criteria
 
-Tests are selected for PostgreSQL variants when they meet either criterion:
+Tests are selected for PostgreSQL variants when they meet any criterion:
 
 1. **Direct native SQL**: the test or the production code it exercises issues `createNativeQuery()` with database-specific syntax
-2. **Database-specific semantics**: the test's correctness depends on behaviour that differs between H2 and PostgreSQL (row locking, constraint enforcement timing, etc.)
+2. **Complex JPQL aggregation**: the test exercises `GROUP BY`/`HAVING` queries with mixed aggregate types where dialect differences surface (e.g. `COUNT` returns `bigint` on PostgreSQL vs `long` on H2)
+3. **Database-specific semantics**: the test's correctness depends on behaviour that differs between H2 and PostgreSQL (row locking, constraint enforcement timing, etc.)
 
-JPQL-only tests are excluded: Hibernate generates database-portable SQL from JPQL, so running them on PostgreSQL adds no coverage beyond the Flyway migration validation (which the selected tests already provide).
+Simple JPQL-only tests (single-entity CRUD, named queries without aggregation) are excluded: Hibernate generates database-portable SQL from these, so running them on PostgreSQL adds no coverage beyond the Flyway migration validation (which the selected tests already provide).
 
 ### Tests to port
 
 | Original | PostgreSQL variant | Reason |
 |----------|-------------------|--------|
 | `JpaSequenceNumberIT` | `JpaSequenceNumberPgIT` | Validates that the SQL-standard `MERGE INTO ... AS t USING (SELECT CAST(?1 AS UUID) AS sid) AS s ON ...` syntax in `LedgerSequenceAllocator` works correctly on PostgreSQL 15+. This is the headline validation — the `MERGE` statement is the primary native SQL in production code. |
-| `LedgerHealthJobIT` | `LedgerHealthJobPgIT` | Uses native SQL `UPDATE ledger_entry SET sequence_number = ?1 WHERE id = ?2` to simulate sequence gaps for gap detection testing. |
+| `LedgerHealthJobIT` | `LedgerHealthJobPgIT` | Exercises complex JPQL aggregation (`GROUP BY`/`HAVING` with mixed numeric types — `COUNT` returns `bigint`, `MIN`/`MAX` return `integer` on PostgreSQL) against real PostgreSQL dialect; test setup uses native SQL `UPDATE` to create sequence gaps. |
 
 **Excluded**: `ActorTrustScoreRepositoryIT` uses JPQL (named queries via `em.createNamedQuery()`), not native SQL. The `NULLS NOT DISTINCT` unique constraint (V1001) is validated by Flyway migration success, which both selected tests already exercise. Adding a third variant would be diminishing returns.
 
