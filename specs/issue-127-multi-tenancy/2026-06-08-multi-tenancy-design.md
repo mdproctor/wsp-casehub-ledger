@@ -168,7 +168,7 @@ Modify V1000 in place (no existing installations per CLAUDE.md schema convention
 
 Add to `ledger_entry` table definition:
 ```sql
-tenancy_id VARCHAR(255) NOT NULL DEFAULT '__default__',
+tenancy_id VARCHAR(255) NOT NULL DEFAULT '278776f9-e1b0-46fb-9032-8bddebdcf9ce',
 ```
 
 Add index:
