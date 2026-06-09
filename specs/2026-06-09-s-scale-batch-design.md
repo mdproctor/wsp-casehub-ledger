@@ -31,17 +31,18 @@ Map<UUID, List<LedgerAttestation>> findAttestationsByActorId(String actorId);
 Uni<Map<UUID, List<LedgerAttestation>>> findAttestationsByActorId(String actorId);
 ```
 
-**JPA implementation** (`JpaCrossTenantLedgerEntryRepository`): JPQL subquery — `LedgerAttestation.ledgerEntryId` is a plain UUID field with no `@ManyToOne` mapping to `LedgerEntry`, so an explicit JPQL JOIN is not possible. Uses a subquery instead:
+**@NamedQuery** on `LedgerAttestation` entity (matches existing convention — six named queries already declared on this entity, Hibernate validates at startup):
 
-```sql
-SELECT a FROM LedgerAttestation a
-WHERE a.ledgerEntryId IN (
-    SELECT e.id FROM LedgerEntry e
-    WHERE e.actorId = :actorId AND e.entryType = :type
-)
+```java
+@NamedQuery(
+    name = "LedgerAttestation.findByActorIdEvents",
+    query = "SELECT a FROM LedgerAttestation a WHERE a.ledgerEntryId IN ("
+          + "SELECT e.id FROM LedgerEntry e WHERE e.actorId = :actorId AND e.entryType = :type)")
 ```
 
-The DB optimizer converts `IN (subquery)` to a semi-join — equivalent performance to an explicit JOIN.
+JPQL subquery — `LedgerAttestation.ledgerEntryId` is a plain UUID field with no `@ManyToOne` mapping to `LedgerEntry`, so an explicit JPQL JOIN is not possible. The DB optimizer converts `IN (subquery)` to a semi-join — equivalent performance.
+
+**JPA implementation** (`JpaCrossTenantLedgerEntryRepository`): uses `em.createNamedQuery("LedgerAttestation.findByActorIdEvents", LedgerAttestation.class)`, matching the existing `findAttestationsForEntries()` pattern which uses `createNamedQuery("LedgerAttestation.findByEntryIds")`.
 
 **Tokenisation:** The JPA implementation must call `actorIdentityProvider.tokeniseForQuery(actorId)` before binding the parameter, identically to `findEventsByActorId()`. Omitting this would silently return empty results when tokenisation is enabled.
 
