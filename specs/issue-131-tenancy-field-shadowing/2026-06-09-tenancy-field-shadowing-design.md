@@ -81,10 +81,8 @@ Category 2 implementations (`JpaActorTrustScoreRepository`, `JpaKeyRotationRepos
 
 - `MaterializedTrustScoreSource` — `@CrossTenant ActorTrustScoreRepository` → plain `ActorTrustScoreRepository`
 - `CachedTrustScoreSource` — same
-- `ComputedTrustScoreSource` — `@CrossTenant ActorTrustScoreRepository` → plain (also injects `@CrossTenant CrossTenantLedgerEntryRepository` which stays)
 - `PerActorTrustComputer` — same
 - `TrustScoreJob` — `@CrossTenant ActorTrustScoreRepository` → plain (its `@CrossTenant CrossTenantLedgerEntryRepository` stays)
-- `IncrementalTrustUpdateObserver` — same pattern
 - `TrustExportService` — `@CrossTenant ActorTrustScoreRepository` → plain
 - `JpaTrustImportService` — `@CrossTenant ActorTrustScoreRepository` → plain
 - `KeyRotationService` — `@CrossTenant KeyRotationRepository` → plain
