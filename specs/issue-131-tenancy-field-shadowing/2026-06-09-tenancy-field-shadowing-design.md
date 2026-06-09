@@ -35,7 +35,7 @@ The same redirection applies to reads: `((LedgerEntry) cle).tenancyId` returns t
 **Changes in casehub-ledger (this repo):**
 
 1. Update `ledger-subclass-extension` protocol — add rule: subclass entities must NOT redeclare fields that exist on `LedgerEntry`.
-2. Add build-time field-shadowing guard in `LedgerProcessor` (see Part F below).
+2. Add build-time field-shadowing guard in `LedgerProcessor` (see Part E below).
 
 **Internal subclasses verified clean:** `PlainLedgerEntry`, `KeyRotationEntry`, `ActorIdentityBindingEntry` — none declare `tenancyId`. No shadowing issue within ledger itself.
 
@@ -52,67 +52,83 @@ After removal, `cle.tenancyId` resolves to the inherited `LedgerEntry.tenancyId`
 
 **Follow-up (not in scope):** `CaseLedgerEntryRepository.findByCaseId()`, `findLatestByCaseId()`, and `findWorkerDecisionsByCaseId()` don't filter by `tenancyId`. This is a pre-existing design gap — engine#459 (SPI propagation) already tracks it.
 
-### #132: Move @CrossTenant to Implementations, Delete Producer
+### #132: Scope @CrossTenant to Dual-Variant Disambiguation, Delete Producer
 
-**Principle:** The `@CrossTenant` qualifier belongs on the bean implementation, not on a producer wrapper. Each cross-tenant repository implementation carries `@CrossTenant` directly. CDI resolves qualified beans without a producer chain.
+**Principle:** The codebase has two categories of cross-tenant repository:
 
-**Part A — Add @CrossTenant to implementations:**
+**Category 1 — Dual-variant interfaces:** `CrossTenantLedgerEntryRepository` has a tenant-scoped counterpart (`LedgerEntryRepository`). The `@CrossTenant` qualifier disambiguates which variant is injected. This is genuine CDI disambiguation — the qualifier resolves a real ambiguity.
 
-Runtime JPA implementations (all `@ApplicationScoped`):
+**Category 2 — Inherently cross-tenant interfaces:** `ActorTrustScoreRepository`, `KeyRotationRepository`, `ActorIdentityBindingRepository` have NO tenant-scoped variant. None of their methods accept `tenancyId`. Trust scores are per-actor, key rotations are per-actor, identity bindings are per-actor. These interfaces are cross-tenant by definition — the type itself enforces the boundary.
+
+`@CrossTenant` is applied only to Category 1. Adding it to Category 2 implementations would remove their implicit `@Default` CDI qualifier, breaking all unqualified injection sites (14 test + 1 production for `ActorTrustScoreRepository` alone) for no architectural benefit — the interface already prevents tenant-scoped misuse.
+
+**Part A — Add @CrossTenant to Category 1 implementations only:**
+
+Runtime JPA:
 - `JpaCrossTenantLedgerEntryRepository` — add `@CrossTenant`
-- `JpaActorTrustScoreRepository` — add `@CrossTenant`
-- `JpaKeyRotationRepository` — add `@CrossTenant`
-- `JpaActorIdentityBindingRepository` — add `@CrossTenant`
 
-Persistence-memory implementations (all `@Alternative @Priority(1)`):
+Persistence-memory:
 - `InMemoryCrossTenantLedgerEntryRepository` — add `@CrossTenant`
-- `InMemoryActorTrustScoreRepository` — add `@CrossTenant`
-- `InMemoryKeyRotationRepository` — add `@CrossTenant`
-- `InMemoryActorIdentityBindingRepository` — add `@CrossTenant`
 
-Reactive cross-tenant implementations (build-gated via `casehub.ledger.reactive.enabled=true`):
+Reactive (build-gated):
 - `InMemoryCrossTenantReactiveLedgerEntryRepository` — add `@CrossTenant`
 
-Injection sites (`@Inject @CrossTenant ...`) are unchanged — they already use the qualifier.
+Category 1 injection sites already use `@CrossTenant` — no changes needed.
 
-**Part B — Delete CrossTenantProducer:**
+**Part B — Remove @CrossTenant from Category 2 injection sites:**
 
-Delete `runtime/src/main/java/io/casehub/ledger/runtime/service/identity/CrossTenantProducer.java`. The four-dependency producer chain is eliminated.
+Category 2 implementations (`JpaActorTrustScoreRepository`, `JpaKeyRotationRepository`, `JpaActorIdentityBindingRepository` and their in-memory counterparts) remain unqualified — they keep `@Default`. Remove `@CrossTenant` from the production injection sites that currently use it for these repos:
 
-**Part C — Move startup assertion to @Startup bean:**
+- `MaterializedTrustScoreSource` — `@CrossTenant ActorTrustScoreRepository` → plain `ActorTrustScoreRepository`
+- `CachedTrustScoreSource` — same
+- `ComputedTrustScoreSource` — `@CrossTenant ActorTrustScoreRepository` → plain (also injects `@CrossTenant CrossTenantLedgerEntryRepository` which stays)
+- `PerActorTrustComputer` — same
+- `TrustScoreJob` — `@CrossTenant ActorTrustScoreRepository` → plain (its `@CrossTenant CrossTenantLedgerEntryRepository` stays)
+- `IncrementalTrustUpdateObserver` — same pattern
+- `TrustExportService` — `@CrossTenant ActorTrustScoreRepository` → plain
+- `JpaTrustImportService` — `@CrossTenant ActorTrustScoreRepository` → plain
+- `KeyRotationService` — `@CrossTenant KeyRotationRepository` → plain
 
-Create `CrossTenantBootValidator` — `@Startup @ApplicationScoped`. Injects `@LedgerSystem LedgerSystemCurrentPrincipal`. Validates `isCrossTenantAdmin() == true` at boot. Independent of repository wiring.
+Test injection sites for Category 2 repos are already unqualified — no changes needed.
+
+**Part C — Delete CrossTenantProducer:**
+
+Delete `runtime/src/main/java/io/casehub/ledger/runtime/service/identity/CrossTenantProducer.java`. The producer chain is eliminated entirely. Category 1 repos resolve via `@CrossTenant` on the implementation. Category 2 repos resolve via `@Default` (implicit, unqualified).
+
+The `isCrossTenantAdmin()` startup assertion in the producer is dropped — `LedgerSystemCurrentPrincipal.isCrossTenantAdmin()` is hardcoded `true`. CDI validates bean wiring at startup. An `@Startup` bean asserting a hardcoded invariant is dead code.
 
 **Part D — Build-time @CrossTenant scope validation in LedgerProcessor:**
 
-Add a `@BuildStep` in the deployment module that scans all `@CrossTenant` injection points. If the declaring bean is `@RequestScoped`, produce a deployment validation error. This makes `@CrossTenant` a compile-time-enforced architectural constraint: system-level beans only, never request-scoped.
+Add a `@BuildStep` in the deployment module that scans all `@CrossTenant` injection points. If the declaring bean is `@RequestScoped`, produce a deployment validation error. This applies only to Category 1 — `CrossTenantLedgerEntryRepository` — where a request-scoped bean should use the tenant-scoped `LedgerEntryRepository` instead. Category 2 repos need no scope validation — their APIs can't be misused regardless of caller scope.
 
-**Part E — Update @CrossTenant javadoc:**
+**Part E — Build-time field-shadowing guard in LedgerProcessor:**
+
+Add a `@BuildStep` in the deployment module that scans all registered `LedgerEntry` subclasses (via Jandex `CombinedIndexBuildItem`) for fields that shadow base class fields. For each subclass, compare declared field names against `LedgerEntry` declared field names. Any collision produces a deployment validation error:
+
+> "CaseLedgerEntry.tenancyId shadows LedgerEntry.tenancyId — remove the subclass field."
+
+Zero runtime cost. Catches the problem permanently, across all consumers, regardless of which repo adds the field first. This is the automated guard that prevents the #131 root cause from recurring.
+
+**Part F — Update @CrossTenant javadoc:**
 
 ```java
 /**
- * CDI qualifier for cross-tenant data access — system-level operations that
- * span all tenants (trust computation, retention, key rotation, federation).
+ * CDI qualifier for cross-tenant data access where a tenant-scoped variant exists.
  *
- * <p>Applied to both implementations and injection sites. Unqualified injection
- * of a cross-tenant repository fails at startup — the qualifier is mandatory.
+ * <p>Applied to implementations of {@link CrossTenantLedgerEntryRepository} and its
+ * reactive counterpart. The qualifier disambiguates between the tenant-scoped
+ * {@link LedgerEntryRepository} and the cross-tenant variant. Unqualified injection
+ * of {@code CrossTenantLedgerEntryRepository} fails at startup — the qualifier is
+ * mandatory.
  *
- * <p>All cross-tenant beans run without request context: {@code @Scheduled} jobs,
- * CDI async observers, or infrastructure services. None operate on behalf of a
- * specific tenant.
+ * <p>Not applied to inherently cross-tenant repos ({@code ActorTrustScoreRepository},
+ * {@code KeyRotationRepository}, {@code ActorIdentityBindingRepository}) — these have
+ * no tenant-scoped variant, and the type itself enforces the cross-tenant boundary.
  *
  * <p>Build-time enforcement: {@code @RequestScoped} beans injecting
  * {@code @CrossTenant} produce a deployment error via {@code LedgerProcessor}.
  */
 ```
-
-**Part F — Build-time field-shadowing guard in LedgerProcessor:**
-
-Add a `@BuildStep` in the deployment module that scans all registered `LedgerEntry` subclasses (via Jandex `CombinedIndexBuildItem`) for fields that shadow base class fields. For each subclass, compare `getDeclaredFields()` names against `LedgerEntry.getDeclaredFields()` names. Any collision produces a deployment validation error:
-
-> "CaseLedgerEntry.tenancyId shadows LedgerEntry.tenancyId — remove the subclass field."
-
-Zero runtime cost. Catches the problem permanently, across all consumers, regardless of which repo adds the field first. This is the automated guard that prevents the #131 root cause from recurring.
 
 ---
 
@@ -140,6 +156,7 @@ Zero runtime cost. Catches the problem permanently, across all consumers, regard
 - In-memory tests verify tenancyId is correctly set on entries persisted through `InMemoryLedgerEntryRepository` (base field no longer null after shadowing removal)
 - Build step detects field shadowing in LedgerEntry subclasses — fails the build with a clear message
 - Build step validates no `@RequestScoped` bean injects `@CrossTenant`
-- `@CrossTenant`-qualified injection resolves without a producer
-- Unqualified injection of a cross-tenant repo fails at startup (CDI enforces qualifier)
+- `@CrossTenant`-qualified injection resolves for `CrossTenantLedgerEntryRepository` without a producer
+- Unqualified injection of `CrossTenantLedgerEntryRepository` fails at startup (CDI enforces qualifier)
+- Category 2 repos (`ActorTrustScoreRepository`, `KeyRotationRepository`, `ActorIdentityBindingRepository`) resolve via unqualified injection — no `@CrossTenant` needed
 - Engine capture code no longer redundantly sets `entry.tenancyId` — repository is the sole writer
