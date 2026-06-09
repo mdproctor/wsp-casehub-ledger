@@ -1,3 +1,5 @@
+*Updated: #129 closed — removed from backlog.*
+
 # CaseHub Ledger — Session Handover
 **Date:** 2026-06-09
 
@@ -28,7 +30,6 @@ Pick from What's Next — #108/#110 (identity features) are unblocked. Or start 
 |---|-------------|-------|------------|-------|
 | #108 | JwtVCValidator — W3C VC JWT credential validation | M | High | Unblocked |
 | #110 | ScimDIDResolver — synthetic DIDDoc from SCIM | M | Med | Unblocked |
-| #129 | ActorIdentityBindingObserver — carry tenancyId through CDI event | S | Med | Needs platform-api change |
 
 ## References
 
