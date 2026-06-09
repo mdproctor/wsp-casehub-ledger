@@ -1,5 +1,6 @@
 # CaseHub Ledger — Session Handover
 **Date:** 2026-06-10
+*Updated: parent#181 closed — removed from backlog.*
 
 ## Current State
 
@@ -18,7 +19,6 @@ Pick from What's Next — #108/#110 (identity features) are unblocked. Or apply 
 ## What's Left
 
 - Backup branches accumulating — oldest eligible past 14-day hold: `20260507`, `20260508`, `20260521`, `20260522`. · XS · Low
-- parent#181: sync PLATFORM.md for multi-tenancy (#127), incremental trust (#115), PostgreSQL tests (#122). · S · Low
 - Cross-repo coherence review: ledger#127 spec + work + qhorus tenancy specs. · M · Med
 - engine#460: remove tenancyId field from CaseLedgerEntry/WorkerDecisionEntry, capture code cleanup, V2000/V2001 migration rewrite. Spec documents exact changes. · S · Low
 
