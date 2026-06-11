@@ -2,7 +2,7 @@
 
 **Issue:** casehubio/ledger#128
 **Date:** 2026-06-11
-**Status:** Design — revision 2
+**Status:** Design — revision 3
 
 ---
 
@@ -97,7 +97,7 @@ With content hashing, it calls `entry.domainContentBytes()` — a virtual dispat
 A static utility calling an instance method on its parameter is semantically wrong.
 The canonical form is a property of the entry, not of the Merkle tree utility.
 
-**Move to `runtime.model.LedgerEntry` as a public instance method.**
+**Move to `runtime.model.LedgerEntry` as a public final instance method.**
 
 The `api.model.LedgerEntry` does NOT get this method — it lacks agent signing fields
 (`agentSignature`, `agentPublicKey`, `agentKeyRef`) and `actorDid`, so it cannot
@@ -107,7 +107,7 @@ subclasses (`CaseLedgerEntry`, `MessageLedgerEntry`) extend the runtime class.
 
 ```java
 // runtime/src/main/java/io/casehub/ledger/runtime/model/LedgerEntry.java
-public byte[] canonicalBytes() {
+public final byte[] canonicalBytes() {
     final String structural = String.join("|",
         subjectId != null ? subjectId.toString() : "",
         String.valueOf(sequenceNumber),
@@ -510,8 +510,8 @@ compile error and migrate to `entry.canonicalBytes()`.
 
 | Repo | Subclass | Issue |
 |------|----------|-------|
-| engine | `CaseLedgerEntry` | engine#471 — add `domainContentBytes()` override + fix `canonicalBytes` call sites |
-| qhorus | `MessageLedgerEntry` | qhorus#270 — add `domainContentBytes()` override + fix `canonicalBytes` call sites |
+| engine | `CaseLedgerEntry` | engine#471 — add `domainContentBytes()` override |
+| qhorus | `MessageLedgerEntry` | qhorus#270 — add `domainContentBytes()` override |
 
 ---
 
@@ -568,10 +568,11 @@ Replace the "Hash chain canonical form" section:
 > causedByEntryId), base-table supplements (supplementJson), and subclass domain
 > content via `domainContentBytes()`.
 >
-> `canonicalBytes()` is an instance method on `LedgerEntry` — the canonical form
-> is a property of the entry, not of the Merkle tree utility. Subclasses override
-> `domainContentBytes()` to include join-table fields; a build-time guard in
-> `LedgerProcessor` enforces this for `@Entity` subclasses with persistent fields.
+> `canonicalBytes()` is a `public final` instance method on `LedgerEntry` — the
+> canonical form is a property of the entry, not of the Merkle tree utility.
+> `final` seals the structural encoding; subclasses extend content through
+> `domainContentBytes()` only. A build-time guard in `LedgerProcessor` enforces
+> this for `@Entity` subclasses with persistent fields.
 >
 > The save pipeline runs in four phases: content enrichment → hashing → agent
 > signing → persist. `AgentEntrySigner` is a direct call, not an enricher —
