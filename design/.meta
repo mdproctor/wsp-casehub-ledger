@@ -1,0 +1,9 @@
+branch: issue-128-merkle-content-integrity
+project-sha: 31b9e5e250aee6650d11e38074c939447b610056
+date: 2026-06-11
+issue: 128
+issue-repo: casehubio/ledger
+covers: 128
+flyway-next-v: none
+design-repo: project
+design-section-hashes: 
