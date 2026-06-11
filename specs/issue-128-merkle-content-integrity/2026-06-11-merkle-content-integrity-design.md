@@ -2,7 +2,7 @@
 
 **Issue:** casehubio/ledger#128
 **Date:** 2026-06-11
-**Status:** Design
+**Status:** Design — revision 2
 
 ---
 
@@ -39,6 +39,13 @@ A tamper-evident audit ledger that does not protect content is not tamper-eviden
 in any meaningful sense. The existing DESIGN.md rationale — "domain labels do
 not participate in tamper detection" — treated implementation convenience as a
 security principle. This spec corrects that.
+
+## ARC42 Dependency
+
+ARC42STORIES line 149: "Ch2 before Ch3: supplement schema (V1002) must settle
+before Merkle canonical form is finalised." V1002 has been stable since April.
+This change finalises the canonical form to include supplement content —
+completing the Ch2→Ch3 dependency.
 
 ---
 
@@ -90,7 +97,13 @@ With content hashing, it calls `entry.domainContentBytes()` — a virtual dispat
 A static utility calling an instance method on its parameter is semantically wrong.
 The canonical form is a property of the entry, not of the Merkle tree utility.
 
-**Move to `LedgerEntry` as a public instance method:**
+**Move to `runtime.model.LedgerEntry` as a public instance method.**
+
+The `api.model.LedgerEntry` does NOT get this method — it lacks agent signing fields
+(`agentSignature`, `agentPublicKey`, `agentKeyRef`) and `actorDid`, so it cannot
+compute the full canonical form. The api module is model-only; hashing is a runtime
+concern. `domainContentBytes()` goes on the runtime class only, since downstream
+subclasses (`CaseLedgerEntry`, `MessageLedgerEntry`) extend the runtime class.
 
 ```java
 // runtime/src/main/java/io/casehub/ledger/runtime/model/LedgerEntry.java
@@ -125,29 +138,19 @@ public byte[] canonicalBytes() {
 }
 ```
 
-**`LedgerMerkleTree.canonicalBytes(LedgerEntry)` becomes a delegation:**
-
-```java
-public static byte[] canonicalBytes(final LedgerEntry entry) {
-    return entry.canonicalBytes();
-}
-```
-
-Mark `@Deprecated(forRemoval = true)` — callers should migrate to
-`entry.canonicalBytes()`. The static method stays temporarily to avoid a
-flag-day migration across all repos.
+**Delete `LedgerMerkleTree.canonicalBytes(LedgerEntry)` entirely.** No deprecated
+delegation. This platform has no end users — breaking changes cost nothing
+externally. Downstream repos get a clean compile error pointing them to
+`entry.canonicalBytes()`. The migration is one-line mechanical.
 
 **Call site migration (13 sites in ledger):**
 
 | Caller | Change |
 |--------|--------|
 | `LedgerMerkleTree.leafHash()` | `canonicalBytes(entry)` → `entry.canonicalBytes()` |
-| `AgentSignatureEnricher.enrich()` | `LedgerMerkleTree.canonicalBytes(entry)` → `entry.canonicalBytes()` |
+| `AgentEntrySigner.sign()` (was AgentSignatureEnricher) | `LedgerMerkleTree.canonicalBytes(entry)` → `entry.canonicalBytes()` |
 | `AgentCryptographicVerifier.verifyCryptographic()` | Same |
 | Test classes (8 sites) | Same |
-
-Downstream repos (`engine`, `qhorus`) use `LedgerMerkleTree.canonicalBytes()` in
-test helpers — the deprecated static delegation gives them time to migrate.
 
 ---
 
@@ -159,13 +162,13 @@ test helpers — the deprecated static delegation gives them time to migrate.
 /**
  * Returns domain-specific content bytes for hash protection.
  *
- * <p>Subclasses that declare {@code @Column} fields on join tables MUST override
+ * <p>Subclasses that declare persistent fields on join tables MUST override
  * this method to include those fields. The returned bytes are appended to the
  * canonical form used by both the Merkle leaf hash and the agent signature.
  *
  * <p>Build-time enforcement: {@code LedgerProcessor} produces a deployment error
- * if a {@code LedgerEntry} subclass declares {@code @Column} fields but does not
- * override this method.
+ * if a {@code LedgerEntry} subclass declares persistent fields (non-{@code @Transient})
+ * but does not override this method.
  *
  * @return domain content bytes; empty array if no domain fields exist
  */
@@ -180,7 +183,8 @@ private static final byte[] EMPTY_BYTES = new byte[0];
 that it handles itself in `canonicalBytes()`. An abstract `domainContentBytes()`
 would say "I don't know my content" — but the base class does know its supplement
 content. The override point is specifically for domain content on join tables,
-which the base class correctly knows nothing about.
+which the base class correctly knows nothing about. `PlainLedgerEntry` has no
+domain fields — an empty default is correct, not ceremony.
 
 ### Internal subclass implementations
 
@@ -221,38 +225,59 @@ protected byte[] domainContentBytes() {
 
 | Subclass | Repo | Issue | Fields to include |
 |----------|------|-------|-------------------|
-| `CaseLedgerEntry` | engine | new issue | caseId, commandType, eventType, caseStatus |
-| `MessageLedgerEntry` | qhorus | new issue | channelId, messageId, messageType, target, content, correlationId, commitmentId, toolName, durationMs, tokenCount, contextRefs, sourceEntity |
+| `CaseLedgerEntry` | engine | engine#471 | caseId, commandType, eventType, caseStatus |
+| `MessageLedgerEntry` | qhorus | qhorus#270 | channelId, messageId, messageType, target, content, correlationId, commitmentId, toolName, durationMs, tokenCount, contextRefs, sourceEntity |
 
 ---
 
 ## 4. Build-Time Guard — `domainContentBytes` Override Enforcement
 
 Add a `@BuildStep` in `LedgerProcessor` that scans Jandex for `LedgerEntry`
-subclasses declaring `@Column` fields without overriding `domainContentBytes()`.
+subclasses declaring persistent fields without overriding `domainContentBytes()`.
+
+**Filtering:**
+- Only `@Entity`-annotated subclasses are scanned. Test subclasses without `@Entity`
+  (15 in ledger: `MemoryTestEntry`, `TestLedgerEntry`, `ConcreteEntry`, etc.) are
+  excluded — they are plain Java helpers, not JPA entities.
+- A field is persistent if it is NOT annotated `@Transient`. JPA persists all
+  non-transient fields by default on `@Entity` classes — checking for `@Column`
+  would miss fields that rely on JPA's default mapping (e.g., a field with only
+  `@Enumerated`).
 
 ```java
 @BuildStep
 void validateDomainContentBytes(CombinedIndexBuildItem index) {
-    // For each LedgerEntry subclass in Jandex:
-    //   1. Collect @Column fields declared on the subclass (not inherited)
-    //   2. Check if domainContentBytes() is overridden
-    //   3. If columns exist but no override → deployment error
-    //
-    // PlainLedgerEntry has zero @Column fields → no override needed → passes
-    // KeyRotationEntry has @Column fields + override → passes
-    // CaseLedgerEntry has @Column fields + no override → ERROR
+    final DotName ENTITY = DotName.createSimple("jakarta.persistence.Entity");
+    final DotName TRANSIENT = DotName.createSimple("jakarta.persistence.Transient");
+    final DotName LEDGER_ENTRY = DotName.createSimple(LedgerEntry.class.getName());
+
+    for (ClassInfo subclass : index.getIndex().getAllKnownSubclasses(LEDGER_ENTRY)) {
+        if (!subclass.hasAnnotation(ENTITY)) continue;  // skip test helpers
+
+        // Check for non-@Transient declared fields
+        boolean hasPersistentFields = subclass.fields().stream()
+            .anyMatch(f -> !f.hasAnnotation(TRANSIENT));
+
+        if (!hasPersistentFields) continue;  // PlainLedgerEntry, TestEntry — no domain fields
+
+        // Check if domainContentBytes() is overridden
+        boolean overrides = subclass.method("domainContentBytes") != null;
+
+        if (!overrides) {
+            String fieldNames = subclass.fields().stream()
+                .filter(f -> !f.hasAnnotation(TRANSIENT))
+                .map(FieldInfo::name)
+                .collect(Collectors.joining(", "));
+            throw new DeploymentException(
+                subclass.name().withoutPackagePrefix()
+                + " declares persistent fields (" + fieldNames
+                + ") but does not override domainContentBytes(). "
+                + "These fields are not hash-protected. Override domainContentBytes() "
+                + "to include them in the Merkle leaf hash and agent signature.");
+        }
+    }
 }
 ```
-
-**Deployment error message:**
-
-> `CaseLedgerEntry declares @Column fields (caseId, commandType, eventType, caseStatus)
-> but does not override domainContentBytes(). These fields are not hash-protected.
-> Override domainContentBytes() to include them in the Merkle leaf hash and agent signature.`
-
-This catches downstream consumers at build time — the same enforcement pattern as
-the field-shadowing guard from #131.
 
 ---
 
@@ -263,93 +288,91 @@ the field-shadowing guard from #131.
 ```
 save():
   1. stamp tenancyId, occurredAt, seqNum
-  2. digest = leafHash(entry)           ← BEFORE enrichers
+  2. digest = leafHash(entry)             ← BEFORE enrichers
   3. em.persist()
        └→ @PrePersist → LedgerTraceListener → enricherPipeline.enrich()
-            └→ TraceIdEnricher        (10)  — sets traceId
-            └→ AgentSignatureEnricher (20)  — signs canonicalBytes()
-            └→ ProvenanceCaptureEnricher (30) — attaches ProvenanceSupplement
-            └→ ActorDIDEnricher       (40)  — sets actorDid
-            └→ ActorIdentityValidation(50)  — validates DID/VC
-  4. Merkle frontier update
+            └→ AgentSignatureEnricher  (20) — signs canonicalBytes()
+            └→ ActorDIDEnricher        (40) — sets actorDid
+            └→ ActorIdentityValidation (50) — validates DID/VC
+            └→ TraceIdEnricher     (MAX_VALUE) — sets traceId (NO @Priority!)
+            └→ ProvenanceCaptureEnricher (MAX_VALUE) — attaches ProvenanceSupplement (NO @Priority!)
 ```
 
-The digest is computed at step 2 before enrichers at step 3. The signature at
-priority 20 runs before provenance at priority 30. Neither the digest nor the
-signature can cover enricher-set data.
+**Missing `@Priority` annotations:** `TraceIdEnricher` and `ProvenanceCaptureEnricher`
+have no `@Priority` annotation despite the `LedgerEntryEnricher` javadoc claiming
+priorities 10 and 30. They sort to `Integer.MAX_VALUE` and run in undefined order
+relative to each other. This means the current execution order is: signing (20),
+then DID (40), then identity validation (50), then traceId and provenance in
+arbitrary order. The spec's pipeline diagram in revision 1 was wrong.
 
-The in-memory save already has the right ordering: enrichers → digest → store.
+**Fix:** Add `@Priority(10)` to `TraceIdEnricher` and `@Priority(30)` to
+`ProvenanceCaptureEnricher` as part of this change. The in-memory path's comment
+at line 108-111 assumed enricher ordering was correct — it wasn't.
+
+### Signing is not enrichment — extract from pipeline
+
+`AgentSignatureEnricher` is the only enricher with a hard ordering dependency on
+the digest. It doesn't ADD content to the entry — it SEALS it. Treating it as
+"enricher at priority 20" conflates two different concerns and forced the Phase
+abstraction in revision 1, which added framework-level complexity for a single case.
+
+**Extract signing from the enricher pipeline entirely.** Create `AgentEntrySigner`
+— a thin CDI bean that both repositories inject directly:
+
+```java
+@ApplicationScoped
+public class AgentEntrySigner {
+
+    private static final Logger LOG = Logger.getLogger(AgentEntrySigner.class);
+
+    private final AgentSigner signer;
+
+    @Inject
+    public AgentEntrySigner(final AgentSigner signer) {
+        this.signer = signer;
+    }
+
+    public void sign(final LedgerEntry entry) {
+        if (entry.actorId == null || entry.agentSignature != null) return;
+        try {
+            signer.sign(entry.actorId, entry.canonicalBytes())
+                    .ifPresent(sig -> {
+                        entry.agentSignature = sig.signature();
+                        entry.agentPublicKey = sig.publicKey();
+                        entry.agentKeyRef = sig.keyRef();
+                    });
+        } catch (final Exception e) {
+            LOG.warnf("AgentEntrySigner failed for actor %s — entry will be unsigned: %s",
+                    entry.actorId, e.getMessage());
+        }
+    }
+}
+```
+
+Delete `AgentSignatureEnricher`. No `Phase` enum, no `enrichContent()`/`seal()`
+split, no deprecated `enrich()` method. `LedgerEntryEnricher` stays a
+single-concern interface — all enrichers are content enrichers.
 
 ### New pipeline (both paths)
 
 ```
 save():
   1. stamp tenancyId, occurredAt, seqNum
-  2. enricherPipeline.enrichContent(entry)     ← content enrichers only
-       └→ TraceIdEnricher        (10)
-       └→ ProvenanceCaptureEnricher (30)
-       └→ ActorDIDEnricher       (40)
-       └→ ActorIdentityValidation(50)
-  3. digest = leafHash(entry)                   ← AFTER content enrichment
-  4. enricherPipeline.seal(entry)               ← sealing only
-       └→ AgentSignatureEnricher (20) → signs entry.canonicalBytes()
-  5. em.persist()                                ← no enricher pipeline
+  2. enricherPipeline.enrich(entry)         ← content enrichers only
+       └→ TraceIdEnricher              (10)
+       └→ ProvenanceCaptureEnricher    (30)
+       └→ ActorDIDEnricher             (40)
+       └→ ActorIdentityValidation      (50)
+  3. digest = leafHash(entry)               ← AFTER content enrichment
+  4. agentEntrySigner.sign(entry)           ← signs entry.canonicalBytes()
+  5. em.persist()                            ← no enricher pipeline
   6. Merkle frontier update
 ```
 
-### Implementation changes
+### `LedgerTraceListener` — defensive check
 
-**`LedgerEntryEnricher` gains a phase marker:**
-
-```java
-public interface LedgerEntryEnricher {
-    void enrich(LedgerEntry entry);
-
-    default Phase phase() {
-        return Phase.CONTENT;
-    }
-
-    enum Phase { CONTENT, SEAL }
-}
-```
-
-`AgentSignatureEnricher` overrides: `phase() → Phase.SEAL`.
-All other enrichers keep the default `Phase.CONTENT`.
-
-**`LedgerEnricherPipeline` gains phase-aware methods:**
-
-```java
-public void enrichContent(final LedgerEntry entry) {
-    run(entry, Phase.CONTENT);
-}
-
-public void seal(final LedgerEntry entry) {
-    run(entry, Phase.SEAL);
-}
-
-// existing enrich() method deprecated — calls both phases for backward compat
-@Deprecated(forRemoval = true)
-public void enrich(final LedgerEntry entry) {
-    run(entry, Phase.CONTENT);
-    run(entry, Phase.SEAL);
-}
-
-private void run(final LedgerEntry entry, final Phase phase) {
-    enrichers.handlesStream()
-        .sorted(Comparator.comparingInt(h ->
-            (h.getBean() instanceof InjectableBean<?> ib) ? ib.getPriority() : Integer.MAX_VALUE))
-        .map(h -> h.get())
-        .filter(e -> e.phase() == phase)
-        .forEach(e -> { /* existing try/catch */ });
-}
-```
-
-**`LedgerTraceListener` — remove enricher pipeline invocation:**
-
-The listener currently runs the enricher pipeline at `@PrePersist`. With the
-pipeline moved to explicit save() steps, the listener must not re-run it.
-
-Replace with a defensive check:
+Replace the enricher pipeline invocation with a guard that catches direct
+`em.persist()` calls bypassing the repository:
 
 ```java
 @PrePersist
@@ -357,30 +380,69 @@ public void prePersist(final Object entity) {
     if (!(entity instanceof LedgerEntry entry)) return;
     if (ledgerConfig.hashChain().enabled() && entry.digest == null) {
         throw new IllegalStateException(
-            "LedgerEntry persisted without digest — use LedgerEntryRepository.save(), "
-            + "not em.persist() directly");
+            "LedgerEntry must be persisted through LedgerEntryRepository, "
+            + "which handles sequence allocation, enrichment, hashing, and signing. "
+            + "Direct em.persist() bypasses the entire save pipeline.");
     }
 }
 ```
 
-This catches direct `em.persist()` calls that bypass the repository contract.
+### `LedgerEntryEnricher` javadoc — full rewrite
 
-**`JpaLedgerEntryRepository.save()` — new ordering:**
+The current contract says enrichers must not modify "canonical fields" (the old 6).
+After this change, the entire rationale flips: enrichers run BEFORE hashing, and
+the canonical form expands. The enricher contract must be rewritten:
+
+```java
+/**
+ * SPI for auto-populating fields on {@link LedgerEntry} at persist time.
+ *
+ * <p><strong>Pipeline position:</strong> Content enrichers run BEFORE hashing
+ * and signing. The full save pipeline is:
+ * enrichment → digest (leafHash) → agent signature → persist.
+ *
+ * <p><strong>Ordering:</strong> Enrichers are invoked in ascending
+ * {@code @Priority} order. All implementations MUST carry a
+ * {@code @jakarta.annotation.Priority} annotation:
+ * <ul>
+ *   <li>10 — TraceIdEnricher</li>
+ *   <li>30 — ProvenanceCaptureEnricher</li>
+ *   <li>40 — ActorDIDEnricher</li>
+ *   <li>50 — ActorIdentityValidationEnricher</li>
+ * </ul>
+ *
+ * <p><strong>Contract:</strong>
+ * <ul>
+ *   <li>Do NOT overwrite fields stamped by the save pipeline:
+ *       {@code subjectId}, {@code sequenceNumber}, {@code tenancyId},
+ *       {@code occurredAt}.</li>
+ *   <li>Enrichers MAY attach supplements — that is the point of
+ *       {@link io.casehub.ledger.runtime.service.intercept.ProvenanceCaptureEnricher}.</li>
+ *   <li>Enrichers that modify supplement fields in-place MUST call
+ *       {@link LedgerEntry#refreshSupplementJson()} or
+ *       {@link LedgerEntry#attach(LedgerSupplement)} — direct field mutation
+ *       leaves {@code supplementJson} stale, and the hash will cover the
+ *       stale value.</li>
+ * </ul>
+ */
+```
+
+### `JpaLedgerEntryRepository.save()` — new ordering
 
 ```java
 public LedgerEntry save(final LedgerEntry entry, final String tenancyId) {
     entry.tenancyId = tenancyId;
     // ... existing validation, tokenisation, sanitisation, seqNum allocation ...
 
-    enricherPipeline.enrichContent(entry);          // Phase 1: content enrichment
+    enricherPipeline.enrich(entry);                       // content enrichment
 
     if (ledgerConfig.hashChain().enabled()) {
-        entry.digest = LedgerMerkleTree.leafHash(entry);  // Phase 2: hash
+        entry.digest = LedgerMerkleTree.leafHash(entry);  // hash
     }
 
-    enricherPipeline.seal(entry);                   // Phase 3: seal (agent signature)
+    agentEntrySigner.sign(entry);                         // seal
 
-    em.persist(entry);                               // Phase 4: persist (no enrichers)
+    em.persist(entry);                                     // persist (no enrichers)
 
     if (ledgerConfig.hashChain().enabled()) {
         updateMerkleFrontier(entry, tenancyId);
@@ -389,10 +451,10 @@ public LedgerEntry save(final LedgerEntry entry, final String tenancyId) {
 }
 ```
 
-**`InMemoryLedgerEntryRepository.save()` — minor restructure:**
-
-The in-memory path already runs enrichers before digest. Change: split the
-`enricherPipeline.enrich(entry)` call into `enrichContent()` + digest + `seal()`.
+**`InMemoryLedgerEntryRepository.save()`** — same restructure: replace
+`enricherPipeline.enrich(entry)` with the three-phase sequence. The in-memory
+path already ran enrichers before digest; this change formalises signing as a
+separate step.
 
 ---
 
@@ -400,8 +462,15 @@ The in-memory path already runs enrichers before digest. Change: split the
 
 `LedgerSupplementSerializer.toJson()` uses `LinkedHashMap` with explicit field
 ordering in `toFieldMap()`. Jackson serializes in insertion order. The output
-is deterministic for the same logical content — no serialization instability
-concern.
+is deterministic for the same logical content.
+
+**Precision:** Determinism is path-dependent — it depends on supplement attachment
+order. If `COMPLIANCE` is attached before `PROVENANCE`, the JSON key order is
+`{"COMPLIANCE":{...},"PROVENANCE":{...}}`; reverse the attachment order, and the
+JSON changes. In practice, attachment order is deterministic within a given code
+path (callers attach supplements in a fixed sequence). Verification uses the
+**stored** `supplementJson` column value, not a re-serialization — so even if a
+future code change reorders attachments, existing entries remain verifiable.
 
 ---
 
@@ -434,46 +503,51 @@ hex strings — no change.
 
 ## 9. Downstream Propagation
 
-Breaking change: `LedgerEntry` subclasses with `@Column` fields that do not
+Breaking change: `LedgerEntry` subclasses with persistent fields that do not
 override `domainContentBytes()` will fail at build time.
+`LedgerMerkleTree.canonicalBytes(LedgerEntry)` is deleted — callers get a
+compile error and migrate to `entry.canonicalBytes()`.
 
-| Repo | Subclass | Status |
-|------|----------|--------|
-| engine | `CaseLedgerEntry` | engine#471 — add `domainContentBytes()` override |
-| qhorus | `MessageLedgerEntry` | qhorus#270 — add `domainContentBytes()` override |
-
-These are mechanical — each override is a single method returning `String.join("|", field1, field2, ...).getBytes(UTF_8)`.
+| Repo | Subclass | Issue |
+|------|----------|-------|
+| engine | `CaseLedgerEntry` | engine#471 — add `domainContentBytes()` override + fix `canonicalBytes` call sites |
+| qhorus | `MessageLedgerEntry` | qhorus#270 — add `domainContentBytes()` override + fix `canonicalBytes` call sites |
 
 ---
 
 ## 10. Test Strategy
 
-**`LedgerMerkleTree` unit tests:**
-- Existing `canonicalBytes` tests updated: assert new fields are present in output
-- New: verify `domainContentBytes()` contribution appears in leaf hash
-- New: verify `PlainLedgerEntry` (empty domain) produces same structural hash as before + new base fields
+**`canonicalBytes()` unit tests (on `LedgerEntry`):**
+- Verify new base fields (tenancyId, actorType, causedByEntryId) are present in output
+- Verify supplementJson appears when supplements are attached
+- Verify `domainContentBytes()` contribution appears in the canonical bytes
+- Verify `PlainLedgerEntry` hash includes new base fields and produces no domain
+  content contribution (empty `domainContentBytes()`)
 
 **`KeyRotationEntry` / `ActorIdentityBindingEntry` content integrity tests:**
 - Mutate a domain field after digest computation → `leafHash(entry) != entry.digest`
-- Verify `domainContentBytes()` includes all `@Column` fields
+- Verify `domainContentBytes()` includes all persistent fields
 
 **Pipeline ordering tests:**
-- Verify `ProvenanceSupplement` attached by enricher IS reflected in digest (was NOT before)
-- Verify `AgentSignatureEnricher` runs AFTER digest computation
+- Verify `ProvenanceSupplement` attached by enricher IS reflected in digest
+  (was NOT before — enricher ran after hashing in JPA path)
+- Verify `AgentEntrySigner.sign()` runs AFTER digest computation
 - Verify signature covers the same canonical bytes as the digest
 
 **`LedgerTraceListener` defensive check:**
-- Direct `em.persist()` without digest → `IllegalStateException`
+- Direct `em.persist()` without digest → `IllegalStateException` with message
+  naming the full pipeline (sequence allocation, enrichment, hashing, signing)
 
 **Build-time guard test:**
-- Subclass with `@Column` fields and no `domainContentBytes()` override → deployment error
+- `@Entity` subclass with persistent fields and no `domainContentBytes()` override
+  → deployment error
+- `@Entity` subclass with no persistent fields (e.g. `PlainLedgerEntry`) → passes
+- Non-`@Entity` test subclass with fields → not scanned, passes
 
 **Existing test updates:**
-- All tests that construct `LedgerEntry` instances and compute/compare digests need
-  updating for the expanded canonical form (more fields in the hash)
+- All tests that compute/compare digests need updating for the expanded canonical form
 - `AgentCryptographicVerifierTest` — canonical bytes include new fields
-- `AgentSignatureEnricherTest` — signature covers expanded canonical bytes
-- `LedgerMerkleTreeTest` — leaf hash values change
+- Test helpers calling `LedgerMerkleTree.canonicalBytes(entry)` → `entry.canonicalBytes()`
 
 ---
 
@@ -485,13 +559,24 @@ Replace the "Hash chain canonical form" section:
 > `subjectId|seqNum|entryType|actorId|actorRole|occurredAt`
 > Supplement fields are deliberately excluded from the chain: the chain covers the
 > immutable core audit record; compliance metadata is enrichment, not a tamper-evidence target.
+> Deliberately excludes subclass-specific fields. The chain covers provenance and timing;
+> domain labels do not participate in tamper detection.
 
 **After:**
-> The leaf hash covers all tamper-critical fields: structural metadata, base-table
-> supplements, and subclass domain content via `domainContentBytes()`.
-> `canonicalBytes()` is an instance method on `LedgerEntry` — the canonical form
-> is a property of the entry, not of the Merkle tree utility.
+> The leaf hash covers all tamper-critical fields: structural metadata (subjectId,
+> seqNum, entryType, actorId, actorRole, occurredAt, tenancyId, actorType,
+> causedByEntryId), base-table supplements (supplementJson), and subclass domain
+> content via `domainContentBytes()`.
 >
-> The enricher pipeline runs in two phases: content enrichment (provenance, DID,
-> traceId) → hashing → sealing (agent signature). The signature covers exactly
-> what the digest covers.
+> `canonicalBytes()` is an instance method on `LedgerEntry` — the canonical form
+> is a property of the entry, not of the Merkle tree utility. Subclasses override
+> `domainContentBytes()` to include join-table fields; a build-time guard in
+> `LedgerProcessor` enforces this for `@Entity` subclasses with persistent fields.
+>
+> The save pipeline runs in four phases: content enrichment → hashing → agent
+> signing → persist. `AgentEntrySigner` is a direct call, not an enricher —
+> signing seals the entry, it does not add content.
+
+Also update the `AgentSignatureSuspectEvent` / enricher pipeline section to
+reflect the new architecture (signing extracted from enricher pipeline, content
+enrichers only).
