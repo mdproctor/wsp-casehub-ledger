@@ -91,6 +91,7 @@ Same pattern in `InMemoryLedgerEntryRepository`. The null-guard moves into the S
 | `JpaLedgerEntryRepository` | Pass `actorType` to `tokenise()`, remove null-guard |
 | `InMemoryLedgerEntryRepository` | Same |
 | `JpaCrossTenantLedgerEntryRepository` | No change (only calls `tokeniseForQuery`, not `tokenise`) |
+| Consumer `ActorIdentityProvider` impls | Add `ActorType` parameter to `tokenise()` (compile error until updated) |
 | Test mocks / `@InjectMock` | Update to new signature |
 
 ## Tests
