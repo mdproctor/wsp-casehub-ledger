@@ -806,6 +806,7 @@ Not closed here: domain-specific entry types (`WorkItemLedgerEntry`, `MessageLed
 | Shared audit base schema | Each consumer maintains its own audit tables | `LedgerEntry` JOINED inheritance + V1000 |
 | GDPR Art.22 context | Regulator cannot reconstruct automated decisions | `ComplianceSupplement` write path |
 | GDPR Art.17 erasure | Right to erasure unenforceable | `LedgerErasureService` + `InternalActorIdentityProvider` |
+| Concurrent sequence/Merkle race | Concurrent saves corrupt chain silently | `LedgerSequenceAllocator` INSERT ON CONFLICT + UPDATE; `InMemoryLedgerEntryRepository` per-subject lock (issue #100) |
 
 **Key files:**
 
@@ -1163,6 +1164,10 @@ EigenTrust requires at least 3–5 independent attestors and ~10 distinct actors
 ### 2026-06-02 — PlainLedgerEntry as domain-agnostic concrete subclass (ADR 0017)
 
 `LedgerEntry` is abstract — `@Entity @Inheritance(JOINED)` with no concrete implementation. `OutcomeRecordSaveService` needs to instantiate a concrete subclass for routing-only entries that have no domain-specific columns. Rather than require each consumer to provide a concrete subclass for this use case, `PlainLedgerEntry` ships in the extension as `@Entity @DiscriminatorValue("PLAIN")` with an empty body and a single-FK join table (V1009). Consequence: any deployment using `DefaultOutcomeRecorder` automatically gets a `plain_ledger_entry` table. Consumers that do not use `OutcomeRecord` still get the table created; it will be empty.
+
+### 2026-06-14 — Merkle Serialization Invariant in JpaLedgerEntryRepository.save() (issue #100)
+
+The concurrent-write race in `LedgerSequenceAllocator` was fixed by replacing the SQL MERGE with `INSERT ON CONFLICT DO NOTHING + UPDATE` for PostgreSQL (H2 retains MERGE; H2 2.x has no `ON CONFLICT` support and all H2 tests are serial). The fix surfaced a previously implicit architectural invariant: the UPDATE row lock acquired by `nextSequenceNumber()` is held for the duration of the enclosing `@Transactional save()` in `JpaLedgerEntryRepository`. This lock incidentally serialises the entire save pipeline — including the Merkle frontier update — for concurrent saves to the same subject. Three facts must simultaneously hold for this invariant to be valid: (1) `save()` is `@Transactional`; (2) `nextSequenceNumber()` is the first per-subject serializing DB write in `save()`; (3) `JpaLedgerMerkleFrontierRepository.replace()` participates in the same transaction via REQUIRED propagation. Any refactoring that breaks one of these three conditions will silently corrupt the Merkle chain with no test or constraint catching it. The invariant is now explicitly documented in `LedgerSequenceAllocator`. A known limitation: the dialect detection (`@ConfigProperty(name = "quarkus.datasource.db-kind")`) reads the default datasource key — consumers using a named ledger datasource must set this key explicitly (tracked in casehubio/ledger#141).
 
 ---
 
