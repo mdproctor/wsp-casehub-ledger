@@ -195,7 +195,7 @@ C4Container
 | Group | Package | Key classes |
 |---|---|---|
 | Model | `runtime.model` | `LedgerEntry`, `LedgerAttestation`, `ActorTrustScore`, `LedgerMerkleFrontier`, `KeyRotationEntry`, `ActorIdentityBindingEntry`, `PlainLedgerEntry`, supplement classes |
-| Repositories | `runtime.repository` | `LedgerEntryRepository`, `ReactiveLedgerEntryRepository`, `ActorTrustScoreRepository`, `KeyRotationRepository`, `ActorIdentityBindingRepository` + JPA impls |
+| Repositories | `runtime.repository` | `LedgerEntryRepository`, `ReactiveLedgerEntryRepository`, `ActorTrustScoreRepository`, `KeyRotationRepository`, `ActorIdentityBindingRepository` + JPA `@Alternative` impls + `@DefaultBean` no-op impls (`NoOpLedgerEntryRepository`, `NoOpActorIdentityBindingRepository`, `NoOpLedgerMerkleFrontierRepository`) |
 | Enricher pipeline | `runtime.service` | `LedgerTraceListener`, `TraceIdEnricher`, `AgentSignatureEnricher`, `ActorDIDEnricher`, `ActorIdentityValidationEnricher` |
 | Trust | `runtime.service` | `TrustScoreComputer`, `EigenTrustComputer`, `TrustScoreJob`, `TrustGateService`, `GlobalScoreStrategy` + impls, `DecayFunction` + impls, `AttestationAggregator`, `TrustScoreRoutingPublisher` |
 | Signing | `runtime.service` | `AgentSigner` SPI, `ConfiguredAgentSigner`, `AgentSignatureEnricher`, `AgentCryptographicVerifier`, `AgentSignatureVerificationService`, `ReactiveAgentSignatureVerificationService` |
@@ -818,6 +818,9 @@ Not closed here: domain-specific entry types (`WorkItemLedgerEntry`, `MessageLed
 | `runtime/model/supplement/ProvenanceSupplement.java` | Workflow provenance + `agentConfigHash`; lazily loaded |
 | `runtime/repository/LedgerEntryRepository.java` | Blocking SPI; `findEntryById` (not `findById` — return-type conflict with Panache) |
 | `runtime/repository/jpa/JpaLedgerEntryRepository.java` | `@Alternative @ApplicationScoped`; runs enricher pipeline in `save()` |
+| `runtime/repository/NoOpLedgerEntryRepository.java` | `@DefaultBean @ApplicationScoped`; CDI-satisfaction no-op — all reads return empty, saves return argument unchanged; active when no JPA or in-memory alternative is selected (e.g. consumer test contexts without a datasource) |
+| `runtime/repository/NoOpActorIdentityBindingRepository.java` | `@DefaultBean @ApplicationScoped`; CDI-satisfaction no-op for `ActorIdentityBindingRepository`; allows `ActorIdentityBindingObserver` to resolve without requiring `quarkus.arc.exclude-types` in consumer modules |
+| `runtime/repository/jpa/JpaActorIdentityBindingRepository.java` | `@Alternative @ApplicationScoped`; changed from plain `@ApplicationScoped` in #138 — `@Alternative` is required so the `@DefaultBean` no-op can fill the default slot when no datasource is active |
 | `runtime/service/LedgerRetentionJob.java` | `@Scheduled` retention sweep; archives + deletes past window |
 | `V1000__ledger_base_schema.sql` | `ledger_entry` + `ledger_attestation` tables |
 | `V1002__ledger_supplement.sql` | Supplement tables; drops columns moved to core |
