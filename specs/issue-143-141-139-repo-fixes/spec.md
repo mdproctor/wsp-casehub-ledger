@@ -363,6 +363,20 @@ The canonical hash covers what the entry proves; where it is stored is orthogona
 
 ---
 
+### Pre-existing gaps (not in scope, filed for follow-up)
+
+**#144 — `JpaActorIdentityBindingRepository.save()` never calls `frontierRepo.replace()`.**
+`LedgerVerificationService.treeRoot()`, `inclusionProof()`, and `verify()` are broken for any subject
+whose chain consists entirely of `ActorIdentityBindingEntry` rows — they always see an empty frontier.
+Not introduced by this PR. `KeyRotationEntry` is unaffected because it saves via
+`LedgerEntryRepository.save()` → `JpaLedgerEntryRepository.updateMerkleFrontier()`.
+
+**#145 — `latestBindingFor(actorId)` and `bindingHistoryFor(actorId)` have no `tenancyId` filter.**
+In a multi-tenant deployment with shared `actorId`, both return binding entries from any tenant.
+Read-side counterpart of the write-side collision fixed here.
+
+---
+
 ### Tests
 
 **`InMemoryLedgerMerkleFrontierRepositoryTest`:** add test — two tenants with identical `subjectId`
@@ -371,8 +385,16 @@ produce independent frontiers; save by tenant A does not overwrite tenant B's fr
 **New `MerkleFrontierTenancyIT`:** `@QuarkusTest` with `@TestProfile(MerkleFrontierTenancyProfile.class)`.
 Add `%merkle-tenancy-test` block to `application.properties` with isolated H2 URL and hash chain
 enabled. `JpaLedgerMerkleFrontierRepository` is active via the default `selected-alternatives` block.
-Test: two `ActorIdentityBindingEntry` saves for the same `actorId` but different `tenancyId` values
-produce independent, correctly-ordered frontiers retrievable per tenant.
+
+Use `KeyRotationService.recordRotation()` (not `JpaActorIdentityBindingRepository`): `KeyRotationEntry`
+saves via `LedgerEntryRepository.save()` → `JpaLedgerEntryRepository.updateMerkleFrontier()` →
+`frontierRepo.replace()`, so the frontier is written. `JpaActorIdentityBindingRepository.save()` never
+calls `frontierRepo.replace()` (#144), so using it here would produce vacuously-passing assertions —
+two empty frontiers are trivially independent.
+
+Test: call `KeyRotationService.recordRotation()` for the same `actorId` under two different
+`tenancyId` values. Both produce `subjectId = UUID.nameUUIDFromBytes(actorId)`. Assert that each
+tenant's frontier is independently retrievable, non-empty, and reflects only that tenant's entry count.
 
 **`JpaSequenceNumberIT` and `JpaSequenceNumberPgIT`:** update `nextSequenceNumber` calls to pass
 `tenancyId`.
