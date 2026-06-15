@@ -1,0 +1,9 @@
+branch: issue-143-noop-trust-score-repo
+project-sha: a122478d33cc11352015b4d35f548de3a6d195b8
+date: 2026-06-15
+issue: 143
+issue-repo: casehubio/ledger
+covers: 143,141,139
+flyway-next-v: 1010
+design-repo: project
+design-section-hashes: 
