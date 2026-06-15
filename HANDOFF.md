@@ -12,7 +12,8 @@ Closed two issues: #100 (concurrent write safety — `LedgerSequenceAllocator` I
 
 - **Merkle Serialization Invariant protocol** — document the three-fact invariant in `JpaLedgerEntryRepository.save()` as a casehub-ledger garden protocol. Covered in ARC42STORIES §10 and Javadoc; formal protocol entry not yet created. · S · Low
 - **GE-20260605-b734b3 REVISE** — add `@ConfigProperty(name="quarkus.datasource.db-kind")` dialect detection as alternative to pure MERGE. · XS · Low
-- **Consumer exclude-types cleanup** — `casehub-work` and `casehub-engine` can drop `quarkus.arc.exclude-types=io.casehub.ledger.runtime.service.identity.**` after #138 ships. Cross-repo; not our branch. · XS · Low
+- **Consumer exclude-types cleanup** — `casehub-work` and `casehub-engine` can drop `quarkus.arc.exclude-types=io.casehub.ledger.runtime.service.identity.**` after #138 merges. Cross-repo; not our branch. · XS · Low
+- **#138 PR** — `issue-138-consumer-compat-test` pushed to fork; PR to casehubio/ledger pending. · XS · Low
 
 ## What's Next
 
