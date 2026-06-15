@@ -1,42 +1,35 @@
-# CaseHub Ledger — Session Handover
-**Date:** 2026-06-11
+# Session Handover — 2026-06-15
 
-## Current State
+## Last Session
 
-On branch `issue-128-merkle-content-integrity`. Implementation complete (10 commits, 30 files, 984 insertions). Pre-close sweep done (forage: 4 garden entries, diary written). **Not yet squashed, rebased, or pushed.** Work-end remaining steps: squash, rebase onto main, push to fork, deliver to blessed repo, close #128.
-
-## What Landed This Session
-
-- **#128**: Merkle leaf hash expanded from 6 structural fields to full content coverage — supplementJson, tenancyId, actorType, causedByEntryId, plus subclass domain content via `domainContentBytes()`. `canonicalBytes()` moved from `LedgerMerkleTree` (static) to `LedgerEntry` (public final instance method). Save pipeline restructured: prepareKey → enrich → hash → sign → persist. `AgentSignatureEnricher` deleted — replaced by `AgentEntrySigner` (direct call, not enricher). Missing `@Priority` annotations fixed on TraceIdEnricher/ProvenanceCaptureEnricher. Build-time guard enforces `domainContentBytes()` override on `@Entity` subclasses with persistent fields.
-- **#135**: CI fix — `ScimActorDIDProviderTest` HTTPS validation using 5-arg constructor + `@CrossTenant` qualifier on InMemory injection sites.
-- **#133, #134**: Closed — no ledger-side work (engine#460 is the fix).
-- **#108, #110**: Transferred to `casehubio/platform` (platform#84, platform#85) — identity SPIs live there now.
-- **#127 spec**: Updated to reflect #131/#132 CDI changes (status → Implemented, §3 rewritten).
-- Cross-repo coherence review completed for multi-tenancy specs (ledger/work/qhorus).
+Closed two issues: #100 (concurrent write safety — `LedgerSequenceAllocator` INSERT ON CONFLICT + per-subject lock in InMemory, concurrent PgIT) and #138 (@DefaultBean no-op repositories — `NoOpLedgerEntryRepository`, `NoOpActorIdentityBindingRepository`, `JpaActorIdentityBindingRepository @Alternative`). Both squashed, pushed to fork and casehubio/ledger main. Four multi-round spec reviews preceded each implementation.
 
 ## Immediate Next Step
 
-Run `work-end` to complete #128 close: squash → rebase → push → close issue.
+`/work` — pick next open issue. Run `gh issue list --repo casehubio/ledger --state open` to see current list (9 open).
 
 ## What's Left
 
-- Backup branches accumulating — oldest eligible past 14-day hold: `20260507`, `20260508`, `20260521`, `20260522` · XS · Low
-- Cross-repo coherence review: ledger#127 spec + work + qhorus tenancy specs · M · Med (spec updates applied, implementation items remain in other repos)
-- engine#460: remove tenancyId field from CaseLedgerEntry/WorkerDecisionEntry · S · Low
-- engine#471: add `domainContentBytes()` to CaseLedgerEntry · XS · Low (blocked by #128 landing)
-- qhorus#270: add `domainContentBytes()` to MessageLedgerEntry · XS · Low (blocked by #128 landing)
+- **Merkle Serialization Invariant protocol** — document the three-fact invariant in `JpaLedgerEntryRepository.save()` as a casehub-ledger garden protocol. Covered in ARC42STORIES §10 and Javadoc; formal protocol entry not yet created. · S · Low
+- **GE-20260605-b734b3 REVISE** — add `@ConfigProperty(name="quarkus.datasource.db-kind")` dialect detection as alternative to pure MERGE. · XS · Low
+- **Consumer exclude-types cleanup** — `casehub-work` and `casehub-engine` can drop `quarkus.arc.exclude-types=io.casehub.ledger.runtime.service.identity.**` after #138 ships. Cross-repo; not our branch. · XS · Low
 
 ## What's Next
 
 | # | Description | Scale | Complexity | Notes |
 |---|-------------|-------|------------|-------|
-| #130 | refactor: exempt ActorType.SYSTEM from tokenisation | S | Low | Unblocked |
-| #126 | Decouple MCP tool telemetry from EVENT content | M | Med | Possibly misfiled (mostly qhorus) |
+| #96 | Code-gen reactive service tier (Vert.x codegen style) | L | High | Parked — wait until pair count warrants it |
+| #101 | Vault AppRole/OIDC auth for VaultTransitAgentSigner | M | High | Unblocked (#85 closed) |
+| #102 | Cloud KMS AgentSigner adapters (AWS, GCP, Azure) | L | Med | Unblocked (#85 closed) |
+| #123 | Engine-side TrustScoreSource migration | M | Low | Cross-repo (casehub-engine); unblocked (#118 closed) |
+| #126 | Decouple MCP telemetry from MessageType.EVENT content | — | — | qhorus concern |
+| #136 | TrustGateService batch scoring | — | — | CBR; needs engine#476 |
+| #139 | Merkle frontier not tenant-scoped | M | Med | Filed this session; nameUUID subjectId collision |
+| #141 | Named datasource dialect detection in LedgerSequenceAllocator | S | Low | Filed this session |
+| #143 | JpaActorTrustScoreRepository @Alternative | S | Low | Filed this session; same pattern as #138 |
 
 ## References
 
-| Artifact | Where |
-|----------|-------|
-| Spec | `specs/issue-128-merkle-content-integrity/2026-06-11-merkle-content-integrity-design.md` |
-| Plan | `plans/2026-06-11-merkle-content-integrity.md` |
-| Blog entry | `blog/2026-06-11-mdp01-the-ledger-that-proved-nothing.md` |
+- Specs: `specs/issue-100-concurrent-write-safety/`, `specs/issue-138-noop-defaultbean-ledger-repo/`
+- ARC42STORIES.MD updated this session (§5, §9.4·Audit Primitives, §10, §12)
+- Garden: GE-20260615-6d0ae3 submitted (Merkle Serialization Invariant — undocumented)
