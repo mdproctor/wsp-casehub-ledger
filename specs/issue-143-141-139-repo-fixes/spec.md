@@ -64,8 +64,8 @@ Add `io.casehub.ledger.runtime.repository.jpa.JpaActorTrustScoreRepository` to:
 
 ### Test: `NoOpActorTrustScoreRepositoryTest`
 
-Pure unit test (no container). Verifies all 9 methods: all reads return empty/empty-list, `upsert` and
-`updateGlobalTrustScore` complete without exception.
+Pure unit test (no container). Verifies all 9 methods: all reads return empty/empty-list, `upsert`
+and `updateGlobalTrustScore` complete without exception.
 
 ---
 
@@ -76,7 +76,7 @@ Pure unit test (no container). Verifies all 9 methods: all reads return empty/em
 `LedgerSequenceAllocator` reads `quarkus.datasource.db-kind` (the default datasource key). When a
 consumer sets `casehub.ledger.datasource=myds`, the actual db-kind is at
 `quarkus.datasource."myds".db-kind`. The injected value remains `"h2"`, causing H2 MERGE SQL to run
-against a PostgreSQL connection — immediate SQL syntax error. The existing comment in the source
+against a PostgreSQL connection — immediate SQL syntax error. The existing inline comment
 incorrectly references `casehubio/ledger#140`; the tracking issue is `#141`.
 
 ### Design
@@ -106,10 +106,12 @@ private boolean isPostgresql() {
 }
 ```
 
-`volatile` provides cross-thread visibility. The redundant work on a first-call race is harmless —
-both threads compute the same immutable value.
+Replace `if ("postgresql".equals(dbKind))` with `if (isPostgresql())`.
 
 Also update the inline comment: `// Tracked in casehubio/ledger#140` → `// casehubio/ledger#141`.
+
+`volatile` provides cross-thread visibility. The redundant work on a first-call race is harmless —
+both threads compute the same immutable value.
 
 ### Tests
 
@@ -122,30 +124,28 @@ No new test class. `JpaSequenceNumberIT` (H2) exercises `isPostgresql() == false
 
 ### Problem (full scope)
 
-`ledger_merkle_frontier` has no `tenancy_id`. `ledger_subject_sequence` has no `tenancy_id`.
-Both are keyed by `subjectId` alone. `KeyRotationEntry` and `ActorIdentityBindingEntry` both
-derive `subjectId = UUID.nameUUIDFromBytes(actorId.getBytes(UTF_8))`. In a multi-tenant deployment,
-two tenants sharing the same `actorId` (e.g. `claude:reviewer@v1`) get the same `subjectId`.
+`ledger_merkle_frontier` has no `tenancy_id`. `ledger_subject_sequence` has no `tenancy_id`. Both are
+keyed by `subjectId` alone. `KeyRotationEntry` and `ActorIdentityBindingEntry` both derive
+`subjectId = UUID.nameUUIDFromBytes(actorId.getBytes(UTF_8))`. In a multi-tenant deployment, two
+tenants sharing the same `actorId` (e.g. `claude:reviewer@v1`) get the same `subjectId`.
 
-**Frontier collision (original issue):** both tenants write to the same `ledger_merkle_frontier`
-rows. Each save overwrites the other tenant's frontier.
+**Frontier collision:** both tenants write to the same `ledger_merkle_frontier` rows. Each save
+overwrites the other tenant's frontier.
 
-**Sequence collision (adjacent, must fix here):**
+**Sequence collision — Merkle proof correctness:** `LedgerVerificationService.inclusionProof()`
+computes the Merkle leaf index as `k = entry.sequenceNumber - 1`. With a shared counter, tenant A's
+entries get sequence numbers 1, 3, 5 — making `k = 0, 2, 4`. These are wrong leaf positions in A's
+3-entry Merkle tree (leaves at 0, 1, 2). Inclusion proofs are **cryptographically incorrect** for
+affected entries. Fixing the frontier without fixing the sequence counter leaves inclusion proofs
+broken.
 
-1. `LedgerVerificationService.inclusionProof()` computes the Merkle leaf index as
-   `k = entry.sequenceNumber - 1`. With a shared counter, tenant A's entries get sequence numbers
-   1, 3, 5 — making `k = 0, 2, 4`. These are wrong leaf positions in A's Merkle tree (which has
-   leaves at 0, 1, 2). Inclusion proofs are **incorrect** for affected entries.
+**Sequence collision — health monitoring:** `LedgerHealthJob.checkSequenceGaps()` groups by `subjectId`
+only. After per-tenant counters, different tenants' entries for the same nameUUID `subjectId` overlap
+in sequence number space, producing false-positive gap alerts.
 
-2. Separate from Merkle: `LedgerHealthJob.checkSequenceGaps()` groups by `subjectId` only. After
-   per-tenant counters are applied, it would fire false-positive gap alerts for any `subjectId`
-   shared across tenants.
+Both the frontier and the sequence counter must be fixed together.
 
-3. `InMemoryLedgerEntryRepository` keys both `sequenceCounters` and `subjectLocks` by `UUID`
-   (subjectId) alone — same collision.
-
-Fixing the frontier without fixing the sequence counter leaves `inclusionProof()` broken. Both
-must be fixed together.
+---
 
 ### Schema (rewrite V1000 in place — no production installs)
 
@@ -155,16 +155,17 @@ must be fixed together.
 - Update index: `(subject_id)` → `(subject_id, tenancy_id)`
 
 **`ledger_subject_sequence`:**
-- Change `PRIMARY KEY (subject_id)` → `PRIMARY KEY (subject_id, tenancy_id)`
 - Add `tenancy_id VARCHAR(255) NOT NULL DEFAULT '278776f9-e1b0-46fb-9032-8bddebdcf9ce'`
+- Change `PRIMARY KEY (subject_id)` → `PRIMARY KEY (subject_id, tenancy_id)`
 
 **`ledger_entry`:**
 - Change `UNIQUE INDEX idx_ledger_entry_subject_seq (subject_id, sequence_number)` →
   `UNIQUE INDEX idx_ledger_entry_subject_seq (subject_id, tenancy_id, sequence_number)`
 
-The default value `'278776f9-e1b0-46fb-9032-8bddebdcf9ce'` is the single-tenant sentinel
-(`TenancyConstants.DEFAULT_TENANT_ID`). Single-tenant deployments continue working with zero
-config change.
+The default `'278776f9-e1b0-46fb-9032-8bddebdcf9ce'` is `TenancyConstants.DEFAULT_TENANT_ID`.
+Single-tenant deployments continue working with zero config change.
+
+---
 
 ### API model `LedgerMerkleFrontier` (in `api/`)
 
@@ -173,6 +174,8 @@ Add:
 @Column(name = "tenancy_id", nullable = false)
 public String tenancyId;
 ```
+
+---
 
 ### Runtime model `LedgerMerkleFrontier` NamedQueries
 
@@ -184,9 +187,11 @@ public String tenancyId;
 "DELETE FROM LedgerMerkleFrontier f WHERE f.subjectId = :subjectId AND f.level = :level AND f.tenancyId = :tenancyId"
 ```
 
+---
+
 ### `JpaLedgerMerkleFrontierRepository`
 
-`findBySubjectId`: pass `:tenancyId` to named query.
+`findBySubjectId`: pass `:tenancyId` parameter to named query.
 
 `replace`:
 - Bulk DELETE: add `AND f.tenancyId = :tenancyId`
@@ -194,29 +199,44 @@ public String tenancyId;
 - Before `em.persist(node)`: set `node.tenancyId = tenancyId`
 
 `LedgerMerkleTree.append()` remains unchanged — pure algorithm, sets `subjectId` on returned nodes.
-`tenancyId` is set by `replace()` immediately before persistence. Separation of concerns preserved.
+`tenancyId` is set by `replace()` immediately before persistence.
+
+---
 
 ### `LedgerSequenceAllocator`
 
-Signature change: `nextSequenceNumber(UUID subjectId, String tenancyId)`.
+Signature: `int nextSequenceNumber(UUID subjectId, String tenancyId)`.
 
-All three SQL operations updated to key on `(subject_id, tenancy_id)`:
+All SQL operations key on `(subject_id, tenancy_id)`:
 
-**PostgreSQL INSERT:** seed on `(subject_id, tenancy_id)`, ON CONFLICT on that pair.  
-**PostgreSQL UPDATE:** WHERE clause includes `tenancy_id = ?`.  
-**SELECT:** WHERE clause includes `tenancy_id = ?`.  
-**H2 MERGE:** ON condition includes `tenancy_id`; INSERT includes `tenancy_id` column.
+**PostgreSQL INSERT:** seed row on `(subject_id, tenancy_id)`, `ON CONFLICT (subject_id, tenancy_id) DO NOTHING`.  
+**PostgreSQL UPDATE:** `WHERE subject_id = CAST(?1 AS UUID) AND tenancy_id = ?2`.  
+**SELECT:** `WHERE subject_id = ?1 AND tenancy_id = ?2`.  
+**H2 MERGE:** `ON t.subject_id = s.sid AND t.tenancy_id = s.tid`; INSERT includes `tenancy_id` column.
 
-### `JpaLedgerEntryRepository`
+---
+
+### `JpaLedgerEntryRepository` (call site 1)
 
 ```java
 // Before:
 entry.sequenceNumber = sequenceAllocator.nextSequenceNumber(entry.subjectId);
-// After:
+// After (tenancyId already in scope from save() parameter):
 entry.sequenceNumber = sequenceAllocator.nextSequenceNumber(entry.subjectId, tenancyId);
 ```
 
-(`tenancyId` is already in scope from the `save()` parameter.)
+### `JpaActorIdentityBindingRepository` (call site 2 — line 56)
+
+```java
+// Before:
+entry.sequenceNumber = sequenceAllocator.nextSequenceNumber(entry.subjectId);
+// After (entry.tenancyId set by ActorIdentityBindingObserver.persistBinding() before save()):
+entry.sequenceNumber = sequenceAllocator.nextSequenceNumber(entry.subjectId, entry.tenancyId);
+```
+
+These are the only two call sites of `nextSequenceNumber()`, confirmed via reference search.
+
+---
 
 ### `InMemoryLedgerEntryRepository`
 
@@ -231,8 +251,10 @@ Change:
 
 Both `computeIfAbsent` calls use `new SubjectKey(entry.subjectId, entry.tenancyId)`.
 
-Side effect: tenants sharing a nameUUID `subjectId` no longer block each other on the per-subject
-lock — correct and more concurrent.
+Side-effect: tenants sharing a nameUUID `subjectId` no longer contend on the same lock —
+more concurrent and architecturally correct.
+
+---
 
 ### `InMemoryLedgerMerkleFrontierRepository`
 
@@ -244,69 +266,118 @@ private record FrontierKey(UUID subjectId, String tenancyId) {}
 Change `ConcurrentHashMap<UUID, List<LedgerMerkleFrontier>>` → `ConcurrentHashMap<FrontierKey, ...>`.
 Update `findBySubjectId`, `replace`, `clear`.
 
-### `LedgerHealthJob.checkSequenceGaps()`
+---
 
-JPQL updated to scope gaps per `(subjectId, tenancyId)`:
+### `LedgerHealthJob` + anomaly event redesign
+
+`LedgerGapDetected` already conflates two incompatible shapes: `subjectId` is a UUID-string for
+`SEQUENCE_GAP` and an entity-type name for `RECONCILIATION_MISMATCH`. Every observer must check
+`type()` to know which fields are meaningful. Adding nullable `tenancyId` deepens the smell. Fix the
+design with a sealed interface.
+
+#### Delete
+
+- `LedgerGapDetected` record
+- `GapType` enum
+
+#### New: `LedgerAnomalyDetected` sealed hierarchy
 
 ```java
+public sealed interface LedgerAnomalyDetected
+        permits LedgerSequenceGapDetected, LedgerReconciliationMismatchDetected {}
+
+public record LedgerSequenceGapDetected(
+        UUID subjectId,
+        String tenancyId,
+        long expectedCount,
+        long actualCount)
+        implements LedgerAnomalyDetected {}
+
+public record LedgerReconciliationMismatchDetected(
+        String entityType,
+        long domainCount,
+        long ledgerCount)
+        implements LedgerAnomalyDetected {}
+```
+
+Observers pattern-match on the sealed type. `subjectId` in `LedgerSequenceGapDetected` is typed
+`UUID` (not `String`) — always a genuine aggregate UUID at this call site.
+
+#### `LedgerHealthJob` changes
+
+Inject `Event<LedgerAnomalyDetected>` (replaces `Event<LedgerGapDetected>`).
+
+**`checkSequenceGaps()` — JPQL and Java tuple-reading both change:**
+
+```java
+// JPQL: add e.tenancyId at position 1
 "SELECT e.subjectId, e.tenancyId, COUNT(e), MIN(e.sequenceNumber), MAX(e.sequenceNumber) " +
 "FROM LedgerEntry e " +
 "GROUP BY e.subjectId, e.tenancyId " +
 "HAVING COUNT(e) != MAX(e.sequenceNumber) - MIN(e.sequenceNumber) + 1"
+
+// Java tuple-reading: positions shift — must match JPQL projection exactly
+UUID   subjectId   = (UUID)   row[0];   // unchanged position, now UUID not toString()
+String tenancyId   = (String) row[1];   // NEW
+long   actualCount = ((Number) row[2]).longValue();  // was row[1]
+long   min         = ((Number) row[3]).longValue();  // was row[2]
+long   max         = ((Number) row[4]).longValue();  // was row[3]
+long   expected    = max - min + 1;
+
+gapEvent.fire(new LedgerSequenceGapDetected(subjectId, tenancyId, expected, actualCount));
 ```
 
-### `LedgerGapDetected` record
-
-Add `tenancyId` field (nullable `String` — `null` for `RECONCILIATION_MISMATCH` which operates at
-entity-type granularity, not per-tenant):
+**`checkReconciliation()` — fire site changes:**
 
 ```java
-public record LedgerGapDetected(
-        String subjectId,
-        String tenancyId,       // new — null for RECONCILIATION_MISMATCH
-        long expectedCount,
-        long actualCount,
-        GapType type) {}
+// Before:
+gapEvent.fire(new LedgerGapDetected(source.subjectType(), domainCount, ledgerCount, GapType.RECONCILIATION_MISMATCH));
+// After:
+gapEvent.fire(new LedgerReconciliationMismatchDetected(source.subjectType(), domainCount, ledgerCount));
 ```
 
-Existing observers that ignore `tenancyId` continue compiling but must be updated to pass the field
-when constructing the event.
+Update `LedgerReconciliationSource.subjectType()` Javadoc: replace reference to `LedgerGapDetected`
+with `LedgerReconciliationMismatchDetected.entityType`.
+
+---
 
 ### No-change confirmations
 
-**`NoOpLedgerMerkleFrontierRepository`:** already accepts `tenancyId` in both SPI signatures and
-correctly ignores it (no-op has no state to isolate). No change needed.
+**`NoOpLedgerMerkleFrontierRepository`:** correctly accepts `tenancyId` in both SPI signatures and
+ignores it (no state to isolate). No change needed.
 
 **`LedgerVerificationService`:** no code change needed. `treeRoot`, `inclusionProof`, and `verify`
-already pass `tenancyId` through to `frontierRepo.findBySubjectId`. After the sequence fix,
-`inclusionProof`'s `k = entry.sequenceNumber - 1` is correct because per-tenant counters are
-contiguous starting from 1 — the bug is eliminated by fixing the counter, not by changing
-`LedgerVerificationService`.
+already pass `tenancyId` to `frontierRepo.findBySubjectId`. After the sequence fix, per-tenant
+counters are contiguous from 1, so `k = entry.sequenceNumber - 1` yields correct leaf positions —
+the correctness bug is eliminated by fixing the counter, not by changing `LedgerVerificationService`.
+
+---
 
 ### Design note: `tenancyId` excluded from canonical hash
 
-`tenancyId` is storage metadata, not entry content. It controls *where* the frontier is stored,
-not what the entry proves. The canonical hash covers the tamper-evident content of the entry
-itself (structural metadata, supplementJson, subclass domain fields). A tenant cannot substitute
-another tenant's frontier for verification because the frontier is now keyed by `tenancyId` — so
-the storage isolation provides the isolation guarantee without making `tenancyId` part of the hash.
-Including it in the hash would add a dependency on storage topology to a content-addressing scheme,
-which is incorrect design.
+`tenancyId` is storage metadata, not entry content. Tenant isolation after this fix is provided by
+the keying of frontier rows and sequence rows on `(subject_id, tenancy_id)` — a tenant cannot
+substitute another tenant's frontier during verification. Including `tenancyId` in `canonicalBytes()`
+would introduce a dependency on storage topology into a content-addressing scheme, which is incorrect.
+The canonical hash covers what the entry proves; where it is stored is orthogonal.
+
+---
 
 ### Tests
 
 **`InMemoryLedgerMerkleFrontierRepositoryTest`:** add test — two tenants with identical `subjectId`
-produce independent frontiers.
+produce independent frontiers; save by tenant A does not overwrite tenant B's frontier.
 
 **New `MerkleFrontierTenancyIT`:** `@QuarkusTest` with `@TestProfile(MerkleFrontierTenancyProfile.class)`.
-
-Profile: `%merkle-tenancy-test` block in `application.properties` — isolated H2 URL, hash chain
-enabled, `JpaLedgerMerkleFrontierRepository` active via default selected-alternatives block.
-
-Test asserts: two `KeyRotationEntry` saves for the same `actorId` but different `tenancyId` values
+Add `%merkle-tenancy-test` block to `application.properties` with isolated H2 URL and hash chain
+enabled. `JpaLedgerMerkleFrontierRepository` is active via the default `selected-alternatives` block.
+Test: two `ActorIdentityBindingEntry` saves for the same `actorId` but different `tenancyId` values
 produce independent, correctly-ordered frontiers retrievable per tenant.
 
-**`JpaSequenceNumberIT` and `JpaSequenceNumberPgIT`:** update `nextSequenceNumber` calls to include `tenancyId`.
+**`JpaSequenceNumberIT` and `JpaSequenceNumberPgIT`:** update `nextSequenceNumber` calls to pass
+`tenancyId`.
 
-**`LedgerHealthJobIT` and `LedgerHealthJobPgIT`:** update gap detection assertions to include
-`tenancyId` in the detected event.
+**`LedgerHealthJobIT` and `LedgerHealthJobPgIT`:** update `GapEventCapture.onGap()` to observe
+`LedgerAnomalyDetected` (or split to two typed observers). Update assertions that access `LedgerGapDetected`
+fields to use the new record accessors (`subjectId()`, `tenancyId()` on `LedgerSequenceGapDetected`;
+`entityType()`, `domainCount()`, `ledgerCount()` on `LedgerReconciliationMismatchDetected`).
