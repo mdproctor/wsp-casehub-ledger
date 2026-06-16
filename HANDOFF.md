@@ -1,37 +1,51 @@
-# Session Handover — 2026-06-15
+# Session Handoff — 2026-06-16
 
-*Updated: #138 closed — removed from backlog.*
+## Branch closed: issue-143-noop-trust-score-repo
 
-## Last Session
+Three repository fixes shipped and merged to `casehubio/ledger` main:
 
-Closed two issues: #100 (concurrent write safety — `LedgerSequenceAllocator` INSERT ON CONFLICT + per-subject lock in InMemory, concurrent PgIT) and #138 (@DefaultBean no-op repositories — `NoOpLedgerEntryRepository`, `NoOpActorIdentityBindingRepository`, `JpaActorIdentityBindingRepository @Alternative`). Both squashed, pushed to fork and casehubio/ledger main. Four multi-round spec reviews preceded each implementation.
+**#143 — NoOpActorTrustScoreRepository**
+- `JpaActorTrustScoreRepository` is now `@Alternative`
+- New `NoOpActorTrustScoreRepository @DefaultBean` satisfies CDI injection when no datasource or in-memory alternative is present
+- Five test profiles updated; `%noop-test` deliberately omits it
 
-## Immediate Next Step
+**#141 — Dialect detection in LedgerSequenceAllocator**
+- Replaced `@ConfigProperty(db-kind)` with lazy JDBC metadata detection via `em.unwrap(Session.class).doReturningWork(conn -> conn.getMetaData().getDatabaseProductName()...)`
+- Fixes named-datasource consumers silently getting the H2 MERGE branch against PostgreSQL
 
-`/work` — pick next open issue. Run `gh issue list --repo casehubio/ledger --state open` to see current list (9 open).
+**#139 — Merkle frontier + sequence tenancy**
+- Root cause: `KeyRotationEntry` and `ActorIdentityBindingEntry` derive `subjectId = nameUUIDFromBytes(actorId)` — two tenants sharing the same `actorId` produced identical subjectIds, causing:
+  - Frontier row collision (tenants overwriting each other's Merkle state)
+  - Cryptographically incorrect inclusion proofs (`k = sequenceNumber - 1` used wrong leaf index)
+  - False-positive gap alerts in `LedgerHealthJob`
+- Added `tenancy_id` to `ledger_merkle_frontier` (PK+index) and `ledger_subject_sequence` (composite PK)
+- Both JPA call sites updated; both InMemory implementations use composite key records
+- `LedgerGapDetected` + `GapType` replaced by sealed `LedgerAnomalyDetected` hierarchy
 
-## What's Left
+**Pre-existing bug also fixed:**
+- `consumer-compat-test` had `quarkus:build` goal which fails because test-scoped deps (casehub-platform, quarkus-jdbc-h2) are invisible at package phase; removed the build goal
 
-- **Merkle Serialization Invariant protocol** — document the three-fact invariant in `JpaLedgerEntryRepository.save()` as a casehub-ledger garden protocol. Covered in ARC42STORIES §10 and Javadoc; formal protocol entry not yet created. · S · Low
-- **GE-20260605-b734b3 REVISE** — add `@ConfigProperty(name="quarkus.datasource.db-kind")` dialect detection as alternative to pure MERGE. · XS · Low
-- **Consumer exclude-types cleanup** — `casehub-work` and `casehub-engine` can drop `quarkus.arc.exclude-types=io.casehub.ledger.runtime.service.identity.**` after #138 merges. Cross-repo; not our branch. · XS · Low
+## Current state
 
-## What's Next
+- `casehubio/ledger` main: 3 commits ahead of previous state (2 squashed feat+doc commits + 1 consumer-compat-test fix)
+- All 818 H2 tests pass; 19 PostgreSQL tests pass (Podman/Testcontainers)
+- Issues #143, #141, #139 closed on GitHub
 
-| # | Description | Scale | Complexity | Notes |
-|---|-------------|-------|------------|-------|
-| #96 | Code-gen reactive service tier (Vert.x codegen style) | L | High | Parked — wait until pair count warrants it |
-| #101 | Vault AppRole/OIDC auth for VaultTransitAgentSigner | M | High | Unblocked (#85 closed) |
-| #102 | Cloud KMS AgentSigner adapters (AWS, GCP, Azure) | L | Med | Unblocked (#85 closed) |
-| #123 | Engine-side TrustScoreSource migration | M | Low | Cross-repo (casehub-engine); unblocked (#118 closed) |
-| #126 | Decouple MCP telemetry from MessageType.EVENT content | — | — | qhorus concern |
-| #136 | TrustGateService batch scoring | — | — | CBR; needs engine#476 |
-| #139 | Merkle frontier not tenant-scoped | M | Med | Filed this session; nameUUID subjectId collision |
-| #141 | Named datasource dialect detection in LedgerSequenceAllocator | S | Low | Filed this session |
-| #143 | JpaActorTrustScoreRepository @Alternative | S | Low | Filed this session; same pattern as #138 |
+## Open issues filed this session
 
-## References
+- **#144**: `JpaActorIdentityBindingRepository.save()` never calls `frontierRepo.replace()` — Merkle chain is not maintained for `ActorIdentityBindingEntry` subjects; `LedgerVerificationService` proofs are broken for those subjects
+- **#145**: `latestBindingFor(actorId)` and `bindingHistoryFor(actorId)` have no `tenancyId` filter — cross-tenant read leak for shared `actorId` scenarios
 
-- Specs: `specs/issue-100-concurrent-write-safety/`, `specs/issue-138-noop-defaultbean-ledger-repo/`
-- ARC42STORIES.MD updated this session (§5, §9.4·Audit Primitives, §10, §12)
-- Garden: GE-20260615-6d0ae3 submitted (Merkle Serialization Invariant — undocumented)
+## Protocol added
+
+- `PP-20260616-05dc6a`: Per-subject storage tables must include `tenancy_id` in their key — see `docs/protocols/casehub/per-subject-table-tenancy.md`
+
+## Garden entries added
+
+- `GE-20260616-aaf9b8`: H2 MERGE USING alias-as-type parsing gotcha (`? AS tid` → `Unknown data type: "TID"`)
+- `GE-20260616-e04575`: JDBC dialect detection via `DatabaseMetaData` for named-datasource compatibility
+- REVISE on `GE-20260520-c0e5b4`: added Podman machine-stopped discovery step (`docker context ls` + `podman machine start`)
+
+## Blog entry
+
+- `2026-06-16-mdp01-the-tenant-whose-key-was-always-the-same.md` — published to mdproctor.github.io
