@@ -1,51 +1,34 @@
-# Session Handoff — 2026-06-16
+# Session Handoff — 2026-06-17
 
-## Branch closed: issue-143-noop-trust-score-repo
+## Branch closed: issue-144-identity-binding-merkle-and-tenancy
 
-Three repository fixes shipped and merged to `casehubio/ledger` main:
+Two correctness bugs in `ActorIdentityBindingRepository` fixed:
 
-**#143 — NoOpActorTrustScoreRepository**
-- `JpaActorTrustScoreRepository` is now `@Alternative`
-- New `NoOpActorTrustScoreRepository @DefaultBean` satisfies CDI injection when no datasource or in-memory alternative is present
-- Five test profiles updated; `%noop-test` deliberately omits it
+**#144 — Merkle frontier gap**
+- `JpaActorIdentityBindingRepository.save()` never called `frontierRepo.replace()`
+- `InMemoryActorIdentityBindingRepository.save()` was assigning `sequenceNumber=0`, `digest=null` — no pipeline at all
+- Root cause: dedicated `save()` method duplicated the `LedgerEntryRepository` pipeline incompletely
+- Fix: `ActorIdentityBindingRepository` is now read-only (no `save()`). Observer calls `ledgerRepo.save(entry, tenancyId)` — full pipeline runs
 
-**#141 — Dialect detection in LedgerSequenceAllocator**
-- Replaced `@ConfigProperty(db-kind)` with lazy JDBC metadata detection via `em.unwrap(Session.class).doReturningWork(conn -> conn.getMetaData().getDatabaseProductName()...)`
-- Fixes named-datasource consumers silently getting the H2 MERGE branch against PostgreSQL
+**#145 — Cross-tenant reads**
+- `latestBindingFor(actorId)` and `bindingHistoryFor(actorId)` had no `tenancyId` parameter
+- Named queries ordered by `occurredAt` (non-deterministic within same millisecond)
+- Fix: both methods now take `tenancyId`; named queries filter by it and order by `sequenceNumber`
 
-**#139 — Merkle frontier + sequence tenancy**
-- Root cause: `KeyRotationEntry` and `ActorIdentityBindingEntry` derive `subjectId = nameUUIDFromBytes(actorId)` — two tenants sharing the same `actorId` produced identical subjectIds, causing:
-  - Frontier row collision (tenants overwriting each other's Merkle state)
-  - Cryptographically incorrect inclusion proofs (`k = sequenceNumber - 1` used wrong leaf index)
-  - False-positive gap alerts in `LedgerHealthJob`
-- Added `tenancy_id` to `ledger_merkle_frontier` (PK+index) and `ledger_subject_sequence` (composite PK)
-- Both JPA call sites updated; both InMemory implementations use composite key records
-- `LedgerGapDetected` + `GapType` replaced by sealed `LedgerAnomalyDetected` hierarchy
-
-**Pre-existing bug also fixed:**
-- `consumer-compat-test` had `quarkus:build` goal which fails because test-scoped deps (casehub-platform, quarkus-jdbc-h2) are invisible at package phase; removed the build goal
+**Design decisions:**
+- `ActorDIDEnricher` gets `instanceof ActorIdentityBindingEntry` guard — prevents event loop (makes it unconditionally impossible, not cache-bounded) and prevents `boundDid`/`actorDid` discrepancy
+- `InMemoryActorIdentityBindingRepository` delegates reads to `InMemoryLedgerEntryRepository.allEntries()` (mirrors `InMemoryKeyRotationRepository`)
+- Protocol `PP-20260616-7d4171` formalised: LedgerEntry subclass repositories must be read-only
 
 ## Current state
 
-- `casehubio/ledger` main: 3 commits ahead of previous state (2 squashed feat+doc commits + 1 consumer-compat-test fix)
-- All 818 H2 tests pass; 19 PostgreSQL tests pass (Podman/Testcontainers)
-- Issues #143, #141, #139 closed on GitHub
+- `casehubio/ledger` main: 2 squashed commits ahead of previous state
+- All H2 tests pass (BUILD SUCCESS, 3m 41s); PostgreSQL tests require Docker
+- Issues #144 and #145 closed on GitHub
+- Blog entry published: `2026-06-16-mdp02-the-repository-that-stopped-short.md`
 
-## Open issues filed this session
+## What's Next
 
-- **#144**: `JpaActorIdentityBindingRepository.save()` never calls `frontierRepo.replace()` — Merkle chain is not maintained for `ActorIdentityBindingEntry` subjects; `LedgerVerificationService` proofs are broken for those subjects
-- **#145**: `latestBindingFor(actorId)` and `bindingHistoryFor(actorId)` have no `tenancyId` filter — cross-tenant read leak for shared `actorId` scenarios
-
-## Protocol added
-
-- `PP-20260616-05dc6a`: Per-subject storage tables must include `tenancy_id` in their key — see `docs/protocols/casehub/per-subject-table-tenancy.md`
-
-## Garden entries added
-
-- `GE-20260616-aaf9b8`: H2 MERGE USING alias-as-type parsing gotcha (`? AS tid` → `Unknown data type: "TID"`)
-- `GE-20260616-e04575`: JDBC dialect detection via `DatabaseMetaData` for named-datasource compatibility
-- REVISE on `GE-20260520-c0e5b4`: added Podman machine-stopped discovery step (`docker context ls` + `podman machine start`)
-
-## Blog entry
-
-- `2026-06-16-mdp01-the-tenant-whose-key-was-always-the-same.md` — published to mdproctor.github.io
+| # | Description | Scale | Complexity | Notes |
+|---|-------------|-------|------------|-------|
+| #146 | `KeyRotationRepository` tenancy gap — same structural issue as #145; requires design decision on cross-tenant SUSPECT detection semantics | S | Med | Filed this session; may be intentionally actor-scoped |
