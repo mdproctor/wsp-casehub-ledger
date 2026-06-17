@@ -1,34 +1,32 @@
 # Session Handoff — 2026-06-17
 
-## Branch closed: issue-144-identity-binding-merkle-and-tenancy
+## Branch closed: issue-146-key-rotation-tenancy
 
-Two correctness bugs in `ActorIdentityBindingRepository` fixed:
+`KeyRotationRepository` had the same structural tenancy gap as #144/#145.
+Two methods, two different answers:
 
-**#144 — Merkle frontier gap**
-- `JpaActorIdentityBindingRepository.save()` never called `frontierRepo.replace()`
-- `InMemoryActorIdentityBindingRepository.save()` was assigning `sequenceNumber=0`, `digest=null` — no pipeline at all
-- Root cause: dedicated `save()` method duplicated the `LedgerEntryRepository` pipeline incompletely
-- Fix: `ActorIdentityBindingRepository` is now read-only (no `save()`). Observer calls `ledgerRepo.save(entry, tenancyId)` — full pipeline runs
+- `findByActorId(actorId, tenancyId)` — now tenant-scoped. Each tenant sees
+  only its own rotation history.
+- `findCompromisedByActorIdAndKeyRef(actorId, keyRef)` — stays cross-tenant.
+  A compromised key is a global security signal; scoping per-tenant would let
+  a security incident in one deployment stay invisible to others sharing the
+  same key pair. The intent was already there — `AgentSignatureVerificationService`
+  had always called `compromisedWindows` without tenancyId.
 
-**#145 — Cross-tenant reads**
-- `latestBindingFor(actorId)` and `bindingHistoryFor(actorId)` had no `tenancyId` parameter
-- Named queries ordered by `occurredAt` (non-deterministic within same millisecond)
-- Fix: both methods now take `tenancyId`; named queries filter by it and order by `sequenceNumber`
+Protocol PP-20260616-7d4171 updated with the security-query exception clause.
+All tests green. Pushed to casehubio/ledger main as a single squashed commit.
 
-**Design decisions:**
-- `ActorDIDEnricher` gets `instanceof ActorIdentityBindingEntry` guard — prevents event loop (makes it unconditionally impossible, not cache-bounded) and prevents `boundDid`/`actorDid` discrepancy
-- `InMemoryActorIdentityBindingRepository` delegates reads to `InMemoryLedgerEntryRepository.allEntries()` (mirrors `InMemoryKeyRotationRepository`)
-- Protocol `PP-20260616-7d4171` formalised: LedgerEntry subclass repositories must be read-only
+Also fixed CI: `consumer-compat-test` was failing deploy because the fix commit
+(`28bca4d`) was on the fork but not on upstream. `git ls-remote upstream main`
+showed the gap; `git push upstream main` resolved it.
 
 ## Current state
 
-- `casehubio/ledger` main: 2 squashed commits ahead of previous state
-- All H2 tests pass (BUILD SUCCESS, 3m 41s); PostgreSQL tests require Docker
-- Issues #144 and #145 closed on GitHub
-- Blog entry published: `2026-06-16-mdp02-the-repository-that-stopped-short.md`
+- `casehubio/ledger` main: `9184e8a` — 1 squashed commit ahead of where the session started
+- All tests pass (BUILD SUCCESS, 3m 41s); PostgreSQL tests require Docker
+- Issue #146 closed on GitHub
+- Blog entry published: `2026-06-17-mdp01-compromise-crosses-tenants.md`
 
 ## What's Next
 
-| # | Description | Scale | Complexity | Notes |
-|---|-------------|-------|------------|-------|
-| #146 | `KeyRotationRepository` tenancy gap — same structural issue as #145; requires design decision on cross-tenant SUSPECT detection semantics | S | Med | Filed this session; may be intentionally actor-scoped |
+No open issues identified. Next work is discretionary — pick from the backlog.
