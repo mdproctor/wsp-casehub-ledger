@@ -1,32 +1,38 @@
 # Session Handoff — 2026-06-17
 
-## Branch closed: issue-146-key-rotation-tenancy
+## Branch closed: issue-148-h2-sequence-concurrent
 
-`KeyRotationRepository` had the same structural tenancy gap as #144/#145.
-Two methods, two different answers:
+Four issues closed in one session covering H2 concurrency, API design, and engine migration.
 
-- `findByActorId(actorId, tenancyId)` — now tenant-scoped. Each tenant sees
-  only its own rotation history.
-- `findCompromisedByActorIdAndKeyRef(actorId, keyRef)` — stays cross-tenant.
-  A compromised key is a global security signal; scoping per-tenant would let
-  a security incident in one deployment stay invisible to others sharing the
-  same key pair. The intent was already there — `AgentSignatureVerificationService`
-  had always called `compromisedWindows` without tenancyId.
+**#148** — `LedgerSequenceAllocator` H2 MERGE race condition fixed. H2 2.x MVStore
+evaluates `MERGE INTO` non-atomically; replaced with `INSERT ON CONFLICT DO NOTHING +
+UPDATE` (identical to PostgreSQL path). H2 2.2+ in `MODE=PostgreSQL` supports `ON
+CONFLICT DO NOTHING` (no column list). Dialect split eliminated. Unblocked casehubio/aml CI.
 
-Protocol PP-20260616-7d4171 updated with the security-query exception clause.
-All tests green. Pushed to casehubio/ledger main as a single squashed commit.
+**#136** — Batch scoring API added to `TrustScoreSource` (api/spi): `scoresFor()` and
+`decisionCountsFor()` as `default` methods with loop fallback. `MaterializedTrustScoreSource`
+overrides with single `WHERE actorId IN (...)` query. `TrustGateService` exposes blocking
++ `Uni<>` async variants. Unblocks engine `ImplementationRoutingStrategy`.
 
-Also fixed CI: `consumer-compat-test` was failing deploy because the fix commit
-(`28bca4d`) was on the fork but not on upstream. `git ls-remote upstream main`
-showed the gap; `git push upstream main` resolved it.
+**#142** — `ActorIdentityProvider` moved from `runtime/privacy/` to `api/spi/` per
+`consumer-spi-placement` protocol. `tokeniseForQuery()` now returns `Optional<String>`:
+empty = null input only; present = always query (token or raw actorId). Protocol
+`PP-20260617-4d345f` formalised.
+
+**#123** — `TrustScoreCache` deleted from casehub-engine-ledger. `TrustCandidateClassifier`,
+`TrustWeightedAgentStrategy`, `WorkerDecisionEventCapture` now inject `TrustScoreSource`.
+`CachedTrustScoreSource` selected in engine test config.
 
 ## Current state
 
-- `casehubio/ledger` main: `9184e8a` — 1 squashed commit ahead of where the session started
-- All tests pass (BUILD SUCCESS, 3m 41s); PostgreSQL tests require Docker
-- Issue #146 closed on GitHub
-- Blog entry published: `2026-06-17-mdp01-compromise-crosses-tenants.md`
+- `casehubio/ledger` main: `19634f3` — 4 squashed commits ahead of `9184e8a`
+- casehub-engine branch `issue-123-trust-score-source-migration`: committed (`90697a72`), not merged
+- All tests pass; 802 runtime + 58 persistence-memory + 65 engine-ledger
+- All 4 GitHub issues closed
 
 ## What's Next
 
-No open issues identified. Next work is discretionary — pick from the backlog.
+No open issues identified for this branch. Next work is discretionary — pick from the backlog.
+
+**Pending:** casehub-engine `issue-123-trust-score-source-migration` branch needs its own
+PR or merge into casehub-engine main — not yet done.
