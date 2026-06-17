@@ -1,38 +1,47 @@
 # Session Handoff — 2026-06-17
 
-## Branch closed: issue-148-h2-sequence-concurrent
+## Branch: issue-149-actor-identity-producer (open)
 
-Four issues closed in one session covering H2 concurrency, API design, and engine migration.
+Three issues addressed in one session on branch `issue-149-actor-identity-producer`.
 
-**#148** — `LedgerSequenceAllocator` H2 MERGE race condition fixed. H2 2.x MVStore
-evaluates `MERGE INTO` non-atomically; replaced with `INSERT ON CONFLICT DO NOTHING +
-UPDATE` (identical to PostgreSQL path). H2 2.2+ in `MODE=PostgreSQL` supports `ON
-CONFLICT DO NOTHING` (no column list). Dialect split eliminated. Unblocked casehubio/aml CI.
+**#149** (XS/Low) — `LedgerPrivacyProducer` injected `EntityManager` eagerly, causing
+`UnsatisfiedResolutionException` on `ActorIdentityProvider` in datasource-free deployments
+(e.g. apps using casehub-qhorus without a ledger JPA datasource). Fixed: changed class-level
+`EntityManager em` to `Instance<EntityManager> emInstance` — always satisfiable by Arc;
+`emInstance.get()` only called when tokenisation is enabled. Two unit tests added.
+PR #152 open, 804 runtime tests green.
 
-**#136** — Batch scoring API added to `TrustScoreSource` (api/spi): `scoresFor()` and
-`decisionCountsFor()` as `default` methods with loop fallback. `MaterializedTrustScoreSource`
-overrides with single `WHERE actorId IN (...)` query. `TrustGateService` exposes blocking
-+ `Uni<>` async variants. Unblocks engine `ImplementationRoutingStrategy`.
+**#140** (M/Med) — `ErasureReceiptLedgerEntry` (tamper-evident GDPR Art.17 erasure record).
+Deferred by user decision — wait for a real-world second consumer to surface before
+promoting from devtown-specific to foundation.
 
-**#142** — `ActorIdentityProvider` moved from `runtime/privacy/` to `api/spi/` per
-`consumer-spi-placement` protocol. `tokeniseForQuery()` now returns `Optional<String>`:
-empty = null input only; present = always query (token or raw actorId). Protocol
-`PP-20260617-4d345f` formalised.
-
-**#123** — `TrustScoreCache` deleted from casehub-engine-ledger. `TrustCandidateClassifier`,
-`TrustWeightedAgentStrategy`, `WorkerDecisionEventCapture` now inject `TrustScoreSource`.
-`CachedTrustScoreSource` selected in engine test config.
+**#126** (M/Med) — Decouple MCP tool telemetry from `MessageType.EVENT` content. Closed
+as already done: casehubio/qhorus#257 delivered the `telemetry` field on `MessageDispatch`
+and routed `LedgerWriteService.populateTelemetry()` to `dispatch.telemetry()`. Protocol
+`PP-20260608-054090` settled the architectural question — EVENT stays content-free; STATUS
+is the canonical type for content-bearing observe-channel messages.
 
 ## Current state
 
-- `casehubio/ledger` main: `19634f3` — 4 squashed commits ahead of `9184e8a`
-- casehub-engine branch `issue-123-trust-score-source-migration`: committed (`90697a72`), not merged
-- All tests pass; 802 runtime + 58 persistence-memory + 65 engine-ledger
-- All 4 GitHub issues closed
+- Project branch `issue-149-actor-identity-producer`: 1 commit ahead of main, PR #152 open
+- Workspace branch: `issue-149-actor-identity-producer`
+- casehubio/ledger main: `19634f3`
+- All 804 runtime tests pass
+
+## Immediate Next Step
+
+Merge PR #152 (trivial, single clean commit). Then run `work-end` to close the branch.
+
+## What's Left
+
+- PR #152 merge → `work-end` · XS · Low
 
 ## What's Next
 
-No open issues identified for this branch. Next work is discretionary — pick from the backlog.
-
-**Pending:** casehub-engine `issue-123-trust-score-source-migration` branch needs its own
-PR or merge into casehub-engine main — not yet done.
+| # | Description | Scale | Complexity | Notes |
+|---|-------------|-------|------------|-------|
+| #102 | Cloud KMS AgentSigner adapters (AWS, GCP, Azure) | L | Med | blocker #85 closed — ready |
+| #101 | Vault AppRole/OIDC auth for VaultTransitAgentSigner | M | High | blocker #85 closed — ready |
+| #96 | Code-generation for reactive service tier | L | High | wait until service pair count ≥ 5 |
+| #137 | Artifact trust scoring (content-hashed artifacts) | L | High | wait for casehub-ops consumer |
+| #140 | ErasureReceiptLedgerEntry | M | Med | deferred — wait for second consumer |
