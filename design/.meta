@@ -1,0 +1,9 @@
+branch: issue-146-key-rotation-tenancy
+project-sha: 28bca4df8e011900ce7d0c7bcbb9aeec7e649046
+date: 2026-06-17
+issue: 146
+issue-repo: casehubio/ledger
+covers: 146
+flyway-next-v: none
+design-repo: project
+design-section-hashes: 
