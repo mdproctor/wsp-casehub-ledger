@@ -2,6 +2,7 @@
 
 | File | Date | Title |
 |------|------|-------|
+| [2026-06-17-mdp02-the-source-code-says-so.md](2026-06-17-mdp02-the-source-code-says-so.md) | 2026-06-17 | H2 MERGE concurrent fix, ActorIdentityProvider placement + Optional, TrustScoreCache deletion, batch trust scoring |
 | [2026-06-04-mdp02-the-squash-that-needed-surgery.md](2026-06-04-mdp02-the-squash-that-needed-surgery.md) | 2026-06-04 | git merge commit linearisation; --reapply-cherry-picks + merge-base; ARC42STORIES.MD audit found 11 errors + 15 omissions |
 | [2026-06-04-mdp01-reading-the-ledger-backwards.md](2026-06-04-mdp01-reading-the-ledger-backwards.md) | 2026-06-04 | ARC42STORIES.MD completed from 16 blog entries; stale §1 terminology corrected; layer taxonomy (6 layers); C4 diagrams written inline |
 | [2026-06-02-mdp01-the-write-that-commits-before-returning.md](2026-06-02-mdp01-the-write-that-commits-before-returning.md) | 2026-06-02 | OutcomeRecorder + trust routing architecture; incremental pipeline descoped; PlainLedgerEntry spec correction; routing-enabled critical config; 604 tests green |
