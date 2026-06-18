@@ -1,31 +1,18 @@
 # Session Handoff — 2026-06-18
 
-## Branch closed: issue-151-on-conflict-do-update
+## Branch closed: issue-153-health-job-having-fix
 
-treblree filed a detailed issue claiming ON CONFLICT DO NOTHING was masking a
-concurrent data race in `LedgerSequenceAllocator` rather than fixing it.
-Exhaustive execution trace proved the implementation was correct — H2 MODE=PostgreSQL
-blocks TX2 at the INSERT step (index-entry lock), so DO NOTHING correctly resolves
-the expected post-commit conflict and the UPDATE row lock holds the Merkle
-Serialization Invariant.
-
-The investigation surfaced a real improvement: H2 2.4.240 in MODE=PostgreSQL rejects
-`ON CONFLICT (col, col) DO UPDATE` even though it accepts `ON CONFLICT DO NOTHING`.
-This forced a three-way `Dialect` enum (POSTGRESQL / H2_PG_MODE / H2_STANDARD).
-Real PostgreSQL now gets a single-statement `INSERT … ON CONFLICT DO UPDATE` upsert;
-H2 MODE=PostgreSQL retains DO NOTHING + UPDATE; H2 standard gets a full MERGE with
-both WHEN MATCHED and WHEN NOT MATCHED clauses.
-
-Detailed technical analysis posted to GitHub issue #151. Two garden entries submitted
-(H2 MERGE locking; revise of existing H2 ON CONFLICT entry). All 868 tests pass.
+`LedgerHealthJob.checkSequenceGaps()` had a JPQL HAVING clause with aggregate arithmetic that Hibernate 6 rejects on PostgreSQL — but silently accepts on H2. All H2 tests passed; the failure only surfaced when the job fired in production. The fix removed the HAVING clause and moved filtering to Java. That opened the door to two further improvements (issues #154 and #155 on the same branch): converting the remaining four inline `em.createQuery()` calls in `JpaCrossTenantLedgerEntryRepository` to `@NamedQuery`, and giving each health check its own CDI transaction boundary via self-injection.
 
 ## Current state
 
-- `casehubio/ledger` main: `02f9ec6` — single squashed commit, pushed to both fork
-  and blessed repo
-- 868 runtime + persistence-memory tests pass (all modules, all tests including Docker)
-- Issue #151 closed
-- ARC42STORIES.MD, DESIGN.md, CLAUDE.md all updated
+- `casehubio/ledger` main: `ddfa51b` — two squashed commits, pushed to fork and blessed repo
+- All 5 modules, BUILD SUCCESS (H2 + PostgreSQL with Testcontainers/Podman)
+- Issues #153, #154, #155 closed
+- Protocol PP-20260618-51c673 committed: `docs/protocols/casehub/ledger-entry-named-query.md`
+- DESIGN.md updated: §Architecture (scheduled job gateway rule) + §Key Design Decisions (@NamedQuery requirement)
+- Garden: GE-20260618-d244e2 (H2/PG HAVING dialect gap), GE-20260518-069f64 REVISE (self-injection variant)
+- Blog: `2026-06-18-mdp02-the-query-at-hour-one.md` published to mdproctor.github.io
 
 ## Immediate Next Step
 
