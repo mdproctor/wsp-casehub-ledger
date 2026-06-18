@@ -806,7 +806,7 @@ Not closed here: domain-specific entry types (`WorkItemLedgerEntry`, `MessageLed
 | Shared audit base schema | Each consumer maintains its own audit tables | `LedgerEntry` JOINED inheritance + V1000 |
 | GDPR Art.22 context | Regulator cannot reconstruct automated decisions | `ComplianceSupplement` write path |
 | GDPR Art.17 erasure | Right to erasure unenforceable | `LedgerErasureService` + `InternalActorIdentityProvider` |
-| Concurrent sequence/Merkle race | Concurrent saves corrupt chain silently | `LedgerSequenceAllocator` INSERT ON CONFLICT + UPDATE; `InMemoryLedgerEntryRepository` per-subject lock (issue #100) |
+| Concurrent sequence/Merkle race | Concurrent saves corrupt chain silently | `LedgerSequenceAllocator` three-way dialect: PostgreSQL `DO UPDATE` upsert (single statement), H2 `MODE=PostgreSQL` `DO NOTHING + UPDATE`, H2 standard full `MERGE`; `InMemoryLedgerEntryRepository` per-subject lock (issues #100, #151) |
 
 **Key files:**
 
@@ -1175,6 +1175,10 @@ The concurrent-write race in `LedgerSequenceAllocator` was fixed by replacing th
 ### 2026-06-17 — KeyRotationRepository tenancy split: history per-tenant, compromise detection cross-tenant (Closes #146)
 
 `findByActorId(actorId, tenancyId)` is tenant-scoped: each tenant sees only the rotation records it recorded for a given actor, isolating audit trails even when multiple tenants share the same `actorId` (e.g. a shared LLM persona like `claude:reviewer@v1`). `findCompromisedByActorIdAndKeyRef(actorId, keyRef)` remains deliberately cross-tenant: a compromised signing key is a global security fact. If any tenant reports a key as COMPROMISED, all tenants must treat signatures from that key as SUSPECT — scoping compromise detection per-tenant would allow a security incident in one deployment to remain invisible to another, even when both trust the same key pair. This cross-tenant intent was already implicit in `AgentSignatureVerificationService.compromisedEffectiveSince()`, which calls `keyRotationService.compromisedWindows(actorId, keyRef)` without a `tenancyId` parameter. PP-20260616-7d4171 updated with the security-query exception clause.
+
+### 2026-06-18 — Three-way dialect split in LedgerSequenceAllocator (issue #151)
+
+`LedgerSequenceAllocator` now routes across three SQL paths: real PostgreSQL uses a single-statement `INSERT … ON CONFLICT (subject_id, tenancy_id) DO UPDATE SET next_seq = next_seq + 1` — an atomic upsert whose `DO UPDATE` row lock holds the Merkle Serialization Invariant; H2 in `MODE=PostgreSQL` retains the two-statement `DO NOTHING + UPDATE` path (H2 2.4.240 rejects the named conflict-target form `ON CONFLICT (col) DO UPDATE`); H2 in standard mode receives a full `MERGE` with both `WHEN MATCHED UPDATE` and `WHEN NOT MATCHED INSERT` — replacing the previous partial MERGE + separate UPDATE. A `Dialect` enum replaces the `volatile Boolean` flag. Closes #151.
 
 ---
 
