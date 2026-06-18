@@ -3,6 +3,7 @@
 | File | Date | Title |
 |------|------|-------|
 | [2026-06-18-mdp01-the-race-that-wasnt.md](2026-06-18-mdp01-the-race-that-wasnt.md) | 2026-06-18 | ON CONFLICT DO NOTHING concurrency analysis; H2 2.4.240 rejects named-target DO UPDATE; three-way dialect enum |
+| [2026-06-18-mdp02-the-query-at-hour-one.md](2026-06-18-mdp02-the-query-at-hour-one.md) | 2026-06-18 | Hibernate 6 HAVING arithmetic dialect gap (H2 silent, PostgreSQL rejects); @NamedQuery as startup validation; CDI self-injection for per-check TX isolation |
 | [2026-06-17-mdp02-the-source-code-says-so.md](2026-06-17-mdp02-the-source-code-says-so.md) | 2026-06-17 | H2 MERGE concurrent fix, ActorIdentityProvider placement + Optional, TrustScoreCache deletion, batch trust scoring |
 | [2026-06-04-mdp02-the-squash-that-needed-surgery.md](2026-06-04-mdp02-the-squash-that-needed-surgery.md) | 2026-06-04 | git merge commit linearisation; --reapply-cherry-picks + merge-base; ARC42STORIES.MD audit found 11 errors + 15 omissions |
 | [2026-06-04-mdp01-reading-the-ledger-backwards.md](2026-06-04-mdp01-reading-the-ledger-backwards.md) | 2026-06-04 | ARC42STORIES.MD completed from 16 blog entries; stale §1 terminology corrected; layer taxonomy (6 layers); C4 diagrams written inline |
