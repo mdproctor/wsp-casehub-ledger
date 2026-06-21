@@ -1,18 +1,18 @@
-# Session Handoff — 2026-06-18
+# Session Handoff — 2026-06-21
 
-## Branch closed: issue-153-health-job-having-fix
+## Branch closed: issue-156-arc42stories
 
-`LedgerHealthJob.checkSequenceGaps()` had a JPQL HAVING clause with aggregate arithmetic that Hibernate 6 rejects on PostgreSQL — but silently accepts on H2. All H2 tests passed; the failure only surfaced when the job fired in production. The fix removed the HAVING clause and moved filtering to Java. That opened the door to two further improvements (issues #154 and #155 on the same branch): converting the remaining four inline `em.createQuery()` calls in `JpaCrossTenantLedgerEntryRepository` to `@NamedQuery`, and giving each health check its own CDI transaction boundary via self-injection.
+Created `ARC42STORIES.MD` — full arc42stories architecture record (1336 lines, 13 sections). Four journeys, twelve chapters mapping V1000–V1010, eight layer entries with key files, wiring, gotchas, and pattern-to-replicate sections. Retired `docs/DESIGN.md` and `docs/DESIGN-capabilities.md` to one-line redirects. Updated CLAUDE.md routing — four references changed.
+
+Issue casehubio/ledger#156 closed. Also edited casehubio/work#246 to add missing source categories (git history, blog entries, specs) so other repos have a complete template.
 
 ## Current state
 
-- `casehubio/ledger` main: `ddfa51b` — two squashed commits, pushed to fork and blessed repo
-- All 5 modules, BUILD SUCCESS (H2 + PostgreSQL with Testcontainers/Podman)
-- Issues #153, #154, #155 closed
-- Protocol PP-20260618-51c673 committed: `docs/protocols/casehub/ledger-entry-named-query.md`
-- DESIGN.md updated: §Architecture (scheduled job gateway rule) + §Key Design Decisions (@NamedQuery requirement)
-- Garden: GE-20260618-d244e2 (H2/PG HAVING dialect gap), GE-20260518-069f64 REVISE (self-injection variant)
-- Blog: `2026-06-18-mdp02-the-query-at-hour-one.md` published to mdproctor.github.io
+- `casehubio/ledger` main: `cefe512` — pushed to origin
+- All 5 modules, BUILD SUCCESS (pending verification)
+- Issue #156 closed
+- CLAUDE.md routing verified: ARC42STORIES.MD, specs, blog, ADR all correct
+- Quality gate: 52 Key files class names verified, 4 §12 issue refs verified open
 
 ## Immediate Next Step
 
