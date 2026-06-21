@@ -1,0 +1,9 @@
+branch: issue-156-arc42stories
+project-sha: ddfa51b61810ae791a15da4afccbb134c025d414
+date: 2026-06-21
+issue: 156
+issue-repo: casehubio/ledger
+covers: 156
+flyway-next-v: none
+design-repo: project
+design-section-hashes: 
