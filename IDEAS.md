@@ -5,6 +5,19 @@ Promote to an ADR when ready to decide; discard when no longer relevant.
 
 ---
 
+## 2026-06-22 — Hybrid attestation weighting for capability scoring
+
+**Priority:** medium
+**Status:** active
+
+After #157, the capability pass uses raw attestations so that contradicting verdicts (SOUND+FLAGGED on the same entry) both contribute to alpha/beta independently. Side effect: N attestors on the same entry now contribute N× weight instead of 1× consensus weight — entries with more attestors dominate capability scores. Worth exploring a hybrid approach that prevents attestor-count inflation while still allowing contradicting verdicts to both register. The dimension pass has the same raw-attestation behavior, so any solution should apply to both passes.
+
+**Context:** Code review finding from #157 fix. The reviewer flagged the multi-attestor weight change as an acceptable trade-off for now but a design question worth revisiting. The aggregated model prevented the bug; the raw model fixes it but changes weighting semantics.
+
+**Promoted to:**
+
+---
+
 ## ~~2026-04-23 — Submission target: Quarkiverse vs SmallRye~~
 
 **Status:** resolved — not applicable
