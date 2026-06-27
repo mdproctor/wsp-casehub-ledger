@@ -10,27 +10,42 @@ CDI 4.x has two disjoint event delivery channels: `fire()` → `@Observes` and
 `fireAsync()` → `@ObservesAsync`. Neither delivers to the other. A producer that
 fires one channel silently drops observers on the other — no error, no warning.
 
-Ledger has 13 production event types across 12 producers. Only one
-(`TrustScoreComputedAt`) currently fires both channels. The rest are single-channel,
-leaving latent bugs:
+Ledger has 11 distinct event types across 10 producer classes (11 producer
+methods, 14 distinct fire operations). Only one event type
+(`TrustScoreComputedAt`) currently fires both channels. The rest are
+single-channel, leaving latent bugs:
 
-- `ReactiveKeyRotationService.fireAsync()` silently skips three sync
+- `ReactiveKeyRotationService.fireAsync()` silently skips two sync
   cache-invalidation observers (`IdentityCacheInvalidator`,
-  `ActorIdentityValidationEnricher`, `AbstractCachingAgentSigner`). This is a
-  real bug — caches are not invalidated when keys are rotated via the reactive path.
+  `ActorIdentityValidationEnricher`). This is a real bug — caches are not
+  invalidated when keys are rotated via the reactive path.
+  (`AbstractCachingAgentSigner.onKeyRotated()` has no `@Observes` — intentionally
+  omitted to avoid Arc ambiguity; any future consumer subclass following the
+  documented delegation pattern would also be affected.)
 - Any future `@ObservesAsync` observer of `AttestationRecordedEvent`,
-  `TrustScoreActorUpdatedEvent`, `LedgerAnomalyDetected`, `TrustScoreFullPayload`,
+  `TrustScoreActorUpdatedEvent`, `LedgerSequenceGapDetected`,
+  `LedgerReconciliationMismatchDetected`, `TrustScoreFullPayload`,
   or `TrustScoreDeltaPayload` would be silently dropped.
 - Any future `@Observes` observer of `AgentIdentityValidatedEvent` or
   `AgentIdentityViolationEvent` would be silently dropped.
 
 ## Platform alignment
 
-PLATFORM.md documents dedicated dual-channel emitter classes as the platform standard
-(casehub-work's `WorkItemLifecycleEmitter`). casehubio/parent#302 evaluated whether
-dual-channel should be universal; conclusion: repo-specific — adopt when
-`TransactionPhase.AFTER_SUCCESS` observers exist. Ledger qualifies
-(`IncrementalTrustUpdateObserver`, `ComputedTrustScoreSource`).
+PLATFORM.md documents four distinct CDI event dispatch strategies:
+
+| Pattern | Sync | Async | Use case |
+|---|---|---|---|
+| Routing decisions | `fire()` | — | Control flow |
+| Ledger capture | — | `fireAsync()` | Audit trail |
+| CloudEvent envelope | — | `fireAsync()` | Cross-cutting event bus |
+| WorkItem lifecycle | `fire()` | `fireAsync()` | Dual-channel |
+
+casehubio/parent#302 evaluated whether dual-channel should be universal;
+conclusion: repo-specific, not an adoption mandate. The criterion:
+adopt when `TransactionPhase.AFTER_SUCCESS` observers or transactional sync
+observers exist. Ledger qualifies — `IncrementalTrustUpdateObserver` and
+`ComputedTrustScoreSource` both use `@Observes(during = AFTER_SUCCESS)`. This
+is the same rationale casehub-work used for its normalisation (work#273).
 
 ## Design
 
@@ -45,8 +60,10 @@ event.fireAsync(payload)
 ```
 
 **Ordering:** `fire()` first so that if a sync observer throws, `fireAsync()` is
-skipped. In a `@Transactional` context this prevents async dispatch for events
-whose transaction will roll back.
+skipped — don't dispatch async for a failed sync. In a `@Transactional` context
+this also prevents async dispatch for events whose transaction will roll back.
+The same ordering applies outside `@Transactional` contexts (in-memory
+repositories, reactive pipelines) for general causal correctness.
 
 **Error handling:**
 - `fire()`: follows the producer's existing convention. Repositories let it
@@ -84,7 +101,10 @@ and easy to review. (See Approach evaluation in the brainstorm.)
 reactive pipelines are non-blocking ConcurrentHashMap operations:
 - `IdentityCacheInvalidator.onKeyRotated()` → `ConcurrentHashMap.remove()`
 - `ActorIdentityValidationEnricher.onKeyRotated()` → `ConcurrentHashMap.remove()`
-- `AbstractCachingAgentSigner.onKeyRotated()` → `ConcurrentHashMap.remove()`
+
+(`AbstractCachingAgentSigner.onKeyRotated()` has no `@Observes` — it is a manual
+delegation point for subclasses. No production subclass exists; `ConfiguredAgentSigner`
+implements `AgentSigner` directly. Not a CDI observer.)
 
 **Identity enricher safety (verified):**
 - Enricher runs from `save()`, not `@PrePersist` (LedgerTraceListener is only a guard)
@@ -92,6 +112,14 @@ reactive pipelines are non-blocking ConcurrentHashMap operations:
   `ActorIdentityBindingEntry` via instanceof guard → `actorDid` stays null →
   `ActorIdentityValidationEnricher.enrich()` returns immediately at line 78
 - Double try/catch isolation: enricher's own catch + pipeline's per-enricher catch
+
+**Identity events contract:** `AgentIdentityValidatedEvent` and
+`AgentIdentityViolationEvent` fire from within the enricher pipeline, which
+executes inside `LedgerEntryRepository.save()`. Sync observers of these events
+run inside the save call of another `LedgerEntry`. Observers must be
+non-blocking and must not call `LedgerEntryRepository.save()` synchronously.
+For persistence, use `@ObservesAsync` with `@Transactional(REQUIRES_NEW)`, as
+`ActorIdentityBindingObserver` does.
 
 #### Group 3 — Complete dual-channel in `TrustScoreRoutingPublisher`
 
@@ -121,6 +149,21 @@ async observers, so the guards correctly trigger when either kind exists.
 **`TrustScoreRoutingPublisher`:** existing unit test uses mocked `Event<T>`. Add
 `verify(fullEvent).fireAsync(any())` and `verify(deltaEvent).fireAsync(any())`.
 
+### In-memory / JPA dispatch asymmetry
+
+`InMemoryLedgerEntryRepository` has no JTA transaction. After this change:
+
+- `@ObservesAsync AttestationRecordedEvent` observers fire on **both** JPA and
+  in-memory paths (new behaviour from `fireAsync()`).
+- `@Observes(during = AFTER_SUCCESS) AttestationRecordedEvent` observers fire
+  **only** on the JPA path. On the in-memory path, `fire()` dispatches but
+  `AFTER_SUCCESS` observers silently do not fire when no JTA transaction is active
+  (GE-20260501-884024).
+
+This is acceptable: the in-memory path is for tests and lightweight deployments
+where trust score computation is not meaningful. But the asymmetry should be
+visible to future developers adding `AttestationRecordedEvent` observers.
+
 ### Events NOT changed
 
 `TrustScoreComputedAt` in `TrustScoreRoutingPublisher` — already fires both
@@ -128,16 +171,15 @@ channels. No change needed.
 
 ## Coherence review
 
-- **PLATFORM.md:** Dual-channel emitter is the documented platform standard.
-  This change normalises ledger to match. ✅
+- **PLATFORM.md:** parent#302's adoption criterion (AFTER_SUCCESS observers) is
+  met. Ledger uses the same rationale as casehub-work's normalisation
+  (work#273). ✅
 - **Protocols:** No protocol applies to CDI event dispatch. Checked
   `ledger-entry-named-query`, `ledger-subclass-repo-readonly`,
   `per-subject-table-tenancy`. ✅
 - **Garden:** GE-20260423-daef97 (fire() doesn't reach @ObservesAsync) confirms
   the root cause. GE-20260512-0fe012 (fireAsync() dispatches before commit)
   confirms the ordering rationale. GE-20260501-884024 (AFTER_SUCCESS silent
-  no-fire without JTA) is noted but not actionable — in-memory path's
-  AFTER_SUCCESS observers already don't fire; adding fireAsync() doesn't change
-  that. ✅
+  no-fire without JTA) is documented in the asymmetry section above. ✅
 - **No deferred concerns.** The scope is exhaustive — every single-channel
   producer in the repo is covered.
