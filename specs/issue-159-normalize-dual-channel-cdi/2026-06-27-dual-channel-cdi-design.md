@@ -69,6 +69,8 @@ repositories, reactive pipelines) for general causal correctness.
 - `fire()`: follows the producer's existing convention. Repositories let it
   propagate; `TrustScoreRoutingPublisher` wraps in try/catch.
 - `fireAsync()`: always fire-and-forget with `.exceptionally()` at debug level.
+  No producer should await the `CompletionStage` returned by `fireAsync()` —
+  verification verdicts and save results must not depend on observer delivery.
 
 **No abstraction.** The call sites vary in error handling, transaction context,
 and reactive vs blocking context. A generic wrapper would either ignore these
@@ -96,6 +98,24 @@ and easy to review. (See Approach evaluation in the brainstorm.)
 | `ReactiveKeyRotationService.recordRotationAsync()` | `runtime/.../service/ReactiveKeyRotationService.java` | `AgentKeyRotatedEvent` |
 | `ReactiveAgentSignatureVerificationService.verifyAgentSignatureAsync()` | `runtime/.../service/ReactiveAgentSignatureVerificationService.java` | `AgentSignatureSuspectEvent` |
 | `ActorIdentityValidationEnricher.fireEvent()` | `runtime/.../service/identity/ActorIdentityValidationEnricher.java` | `AgentIdentityValidatedEvent`, `AgentIdentityViolationEvent` |
+
+**Bug fix — `ReactiveAgentSignatureVerificationService`:** The current code
+awaits `fireAsync()` via `Uni.createFrom().completionStage(() -> fireAsync(...))`
+(lines 78–82). This couples the SUSPECT verification verdict to observer
+delivery — if a future async observer throws, the pipeline returns an error
+instead of `VerificationResult.SUSPECT`. The SUSPECT verdict is determined by
+cryptographic verification and key rotation state, not observer success.
+Fix: change to `.invoke()` fire-and-forget pattern, matching
+`ReactiveKeyRotationService` (lines 97–99). After normalization, the code
+becomes:
+```java
+return Uni.createFrom().item(VerificationResult.SUSPECT)
+        .invoke(() -> {
+            suspectEvent.fire(payload);
+            suspectEvent.fireAsync(payload)
+                    .exceptionally(ex -> { ... return null; });
+        });
+```
 
 **Reactive path safety (verified):** All sync observers of events fired from
 reactive pipelines are non-blocking ConcurrentHashMap operations:
