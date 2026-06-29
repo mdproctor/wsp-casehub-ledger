@@ -303,6 +303,7 @@ quarkus.arc.selected-alternatives=io.casehub.ledger.signing.aws.quarkus.AwsKmsAg
 - **Supported key types:** Ed25519 only (existing scope; no verification infrastructure changes needed)
 - **Auth:** `X-Vault-Token` header (static token). #101 adds AppRole/OIDC
 - **Signature format:** Raw Ed25519 bytes. Store as-is
+- **Key type validation:** The pure Java client reads `data.type` from the `GET /v1/transit/keys/<keyName>` response before PEM parsing. Non-`"ed25519"` types (e.g., `ecdsa-p256`, `rsa-2048`) → log ERROR ("key {keyName} is {type} but this adapter requires ed25519") and return null/throw. The adapter's `loadContext()` catches this and returns `Optional.empty()` (cached as absent — permanent misconfiguration, no retry)
 - **Error classification:** HTTP 404 (key not found) → return `Optional.empty()`; HTTP 403 (token revoked/expired) → throw (transient); network timeout, 5xx → throw (transient)
 
 ## Verification Infrastructure Changes
@@ -323,11 +324,32 @@ private static final List<String> SUPPORTED_ALGORITHMS =
 
 ### EC signature algorithm mapping
 
-`AgentCryptographicVerifier.verifyCryptographic()` currently calls
-`Signature.getInstance(pub.getAlgorithm())`. For Ed25519 and ML-DSA,
-`pub.getAlgorithm()` returns a valid `Signature` algorithm name. For EC keys,
-`pub.getAlgorithm()` returns `"EC"` — not a valid `Signature` algorithm. A mapping
-function derives the correct algorithm from the EC key's curve parameters:
+Two existing code paths call `Signature.getInstance(key.getAlgorithm())`:
+- `AgentCryptographicVerifier.verifyCryptographic()` (verification)
+- `AgentSignature.signWith()` (local signing via `ConfiguredAgentSigner`)
+
+For Ed25519 and ML-DSA, `key.getAlgorithm()` returns a valid `Signature` algorithm
+name. For EC keys, `key.getAlgorithm()` returns `"EC"` — not a valid `Signature`
+algorithm. Both code paths fail with `NoSuchAlgorithmException`.
+
+A shared `signatureAlgorithm(Key)` utility derives the correct algorithm from the
+EC key's curve parameters. Both `ECPublicKey` and `ECPrivateKey` implement
+`java.security.interfaces.ECKey`, so the same function handles signing and
+verification:
+
+```java
+static String signatureAlgorithm(java.security.Key key) {
+    if (!"EC".equals(key.getAlgorithm())) return key.getAlgorithm();
+    java.security.interfaces.ECKey ec = (java.security.interfaces.ECKey) key;
+    return switch (ec.getParams().getOrder().bitLength()) {
+        case 256 -> "SHA256withECDSA";
+        case 384 -> "SHA384withECDSA";
+        case 521 -> "SHA512withECDSA";
+        default -> throw new IllegalArgumentException(
+            "Unsupported EC curve order: " + ec.getParams().getOrder().bitLength());
+    };
+}
+```
 
 | Curve | Order bit length | Signature algorithm |
 |---|---|---|
@@ -338,6 +360,17 @@ function derives the correct algorithm from the EC key's curve parameters:
 The curve information is embedded in the X.509 SubjectPublicKeyInfo — the mapping
 is deterministic from the key material, consistent with the algorithm-transparency
 protocol.
+
+**Callers updated:**
+- `AgentCryptographicVerifier.verifyCryptographic()`: `Signature.getInstance(signatureAlgorithm(pub))`
+- `AgentSignature.signWith()`: `Signature.getInstance(signatureAlgorithm(keyPair.getPrivate()))`
+
+**Latent side effect addressed:** adding `"EC"` to `LedgerPemUtil.SUPPORTED_ALGORITHMS`
+enables `ConfiguredAgentSigner` to load EC private keys from PEM files at startup.
+Without the `signatureAlgorithm()` fix in `signWith()`, key loading succeeds silently
+but every signing attempt fails at runtime — a confusing failure mode where the startup
+log says "Loaded signing key" but entries remain unsigned. The shared mapping function
+eliminates this by making local EC signing work end-to-end.
 
 ### RSA is out of scope
 
