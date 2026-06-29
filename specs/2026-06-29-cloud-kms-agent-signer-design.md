@@ -364,6 +364,7 @@ protocol.
 **Callers updated:**
 - `AgentCryptographicVerifier.verifyCryptographic()`: `Signature.getInstance(signatureAlgorithm(pub))`
 - `AgentSignature.signWith()`: `Signature.getInstance(signatureAlgorithm(keyPair.getPrivate()))`
+- `LedgerMerklePublisher.signCheckpoint()`: `Signature.getInstance(signatureAlgorithm(privateKey))`
 
 **Latent side effect addressed:** adding `"EC"` to `LedgerPemUtil.SUPPORTED_ALGORITHMS`
 enables `ConfiguredAgentSigner` to load EC private keys from PEM files at startup.
