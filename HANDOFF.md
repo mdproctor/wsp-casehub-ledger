@@ -1,28 +1,28 @@
-# Session Handoff — 2026-06-28
+# Session Handoff — 2026-06-29
 
-## Branch closed: issue-159-normalize-dual-channel-cdi
+## Branch closed: issue-160-erasure-receipt-count-by-tenant
 
-Normalized all CDI event producers to dual-channel firing (#159). Every producer now fires both `fire()` and `fireAsync()`. Fixed two latent bugs: `ReactiveKeyRotationService.fireAsync()` silently skipped sync cache-invalidation observers; `ReactiveAgentSignatureVerificationService` coupled the SUSPECT verdict to observer delivery success. Garden entry GE-20260628-3ea24f captures the Mutiny/fireAsync coupling gotcha.
+Added `countByTenant(String tenancyId)` to `ErasureReceiptRepository` SPI and all three implementations (#160). Fixed javadoc V1009→V1010 migration reference. Unblocks casehub-aml#62 (GDPR Art.17 compliance evidence endpoint).
 
 ## Current state
 
-- `casehubio/ledger` main: `0d92bb9` — pushed to origin
+- `casehubio/ledger` main: `142594b` — pushed to origin
 - All 6 modules BUILD SUCCESS
-- Issue #159 closed
+- Issue #160 closed
 
 ## Paused branch
 
-- `issue-137-artifact-trust-scoring` #137 — paused mid-brainstorm (first clarifying question asked: per-hash vs lineage identity model). Resume with `/work`.
+- `issue-137-artifact-trust-scoring` #137 — paused mid-brainstorm (per-hash vs lineage identity model). No consumer exists yet (casehub-ops LlmProvisioner not built). Resume with `/work`.
 
 ## Immediate Next Step
 
-Resume #137 brainstorm, or pick from the backlog.
+Pick from the backlog — #137 is speculative until casehub-ops builds the LlmProvisioner consumer.
 
 ## What's Next
 
 | # | Description | Scale | Complexity | Notes |
 |---|-------------|-------|------------|-------|
-| #137 | Artifact trust scoring (content-hashed artifacts) | L | High | paused — brainstorm in progress |
+| #137 | Artifact trust scoring (content-hashed artifacts) | L | High | paused — waiting for casehub-ops consumer |
 | #102 | Cloud KMS AgentSigner adapters (AWS, GCP, Azure) | L | Med | blocker #85 closed — ready |
 | #101 | Vault AppRole/OIDC auth for VaultTransitAgentSigner | M | High | blocker #85 closed — ready |
 | #96 | Code-generation for reactive service tier | L | High | wait until service pair count >= 5 |
