@@ -3,6 +3,7 @@
 | File | Date | Title |
 |------|------|-------|
 | [2026-06-18-mdp01-the-race-that-wasnt.md](2026-06-18-mdp01-the-race-that-wasnt.md) | 2026-06-18 | ON CONFLICT DO NOTHING concurrency analysis; H2 2.4.240 rejects named-target DO UPDATE; three-way dialect enum |
+| [2026-06-30-mdp01-the-key-that-never-leaves.md](2026-06-30-mdp01-the-key-that-never-leaves.md) | 2026-06-30 | Cloud KMS signing adapters — two-layer architecture (pure Java + Quarkus CDI), EC-only constraint, keyMaterial() SPI evolution, P-521 DER encoding gotcha, Vault Transit promotion with bug fixes |
 | [2026-06-28-mdp01-the-channel-you-dont-fire.md](2026-06-28-mdp01-the-channel-you-dont-fire.md) | 2026-06-28 | CDI dual-channel normalisation — latent bug in reactive key rotation cache invalidation; fireAsync() await coupling SUSPECT verdict to observer delivery; every producer fires both channels |
 | [2026-06-18-mdp02-the-query-at-hour-one.md](2026-06-18-mdp02-the-query-at-hour-one.md) | 2026-06-18 | Hibernate 6 HAVING arithmetic dialect gap (H2 silent, PostgreSQL rejects); @NamedQuery as startup validation; CDI self-injection for per-check TX isolation |
 | [2026-06-17-mdp02-the-source-code-says-so.md](2026-06-17-mdp02-the-source-code-says-so.md) | 2026-06-17 | H2 MERGE concurrent fix, ActorIdentityProvider placement + Optional, TrustScoreCache deletion, batch trust scoring |
