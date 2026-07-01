@@ -1,14 +1,22 @@
-# Session Handoff — 2026-06-30
+# Session Handoff — 2026-07-01
 
-## Branch closed: issue-163-promote-example-capabilities
+## Branch closed: issue-164-signing-adapter-polish
 
-Investigated #163 (promote example capabilities to first-class modules). Deep analysis found the issue premise was wrong — all four candidates (otel-trace-wiring, prov-dm-export, eigentrust-mesh, trust-score-routing) already have their core logic entirely in `runtime/`. The examples are thin consumer reference apps (domain subclasses, REST endpoints, seed data), not extractable production code. The signing promotion (#102) was different in kind: it created genuinely new external client code. Closed #163 as won't-do.
+Fixed GCP and Azure signing adapter performance — pure Java `sign()` now accepts
+algorithm from cached context (matching AWS's existing correct pattern). Azure SDK
+clients cached in `DefaultAzureKeyVaultClientWrapper`. Housekeeping: SDK versions
+parameterized, TestCurrentPrincipal consolidated, invalid P384 test key replaced,
+dead config classes deleted. Design review ($14.35) caught `SignatureAlgorithm` vs
+`componentSize` — algorithm is the primary abstraction.
+
+Two pre-existing test failures filed: #166 (KeyDIDResolverTest doubled X.509 header),
+#167 (ScimActorDIDProviderTest invalid method reference).
 
 ## Current state
 
-- `casehubio/ledger` main: `023e798` — unchanged (no code on this branch)
-- All modules BUILD SUCCESS
-- Issue #163 closed (won't-do)
+- `casehubio/ledger` main: `2d6c258` — pushed
+- Issue #164 closed
+- All signing module tests pass (pure Java + Quarkus integration)
 
 ## Paused branch
 
@@ -16,13 +24,14 @@ Investigated #163 (promote example capabilities to first-class modules). Deep an
 
 ## Immediate Next Step
 
-Pick from the backlog. #164 is a quick performance/docs polish pass on the signing adapters.
+Fix the two pre-existing test failures (#166, #167) — both are XS/Low.
 
 ## What's Next
 
 | # | Description | Scale | Complexity | Notes |
 |---|-------------|-------|------------|-------|
-| #164 | Signing adapter performance and documentation polish | M | Low | Azure SDK client caching, GCP redundant API call, README fixes |
+| #166 | KeyDIDResolverTest doubled X.509 header | XS | Low | pre-existing |
+| #167 | ScimActorDIDProviderTest invalid method reference | XS | Low | pre-existing |
 | #137 | Artifact trust scoring (content-hashed artifacts) | L | High | paused — waiting for casehub-ops consumer |
 | #101 | Vault AppRole/OIDC auth for VaultTransitAgentSigner | M | High | blocker #85 closed — ready |
 | #96 | Code-generation for reactive service tier | L | High | wait until service pair count >= 5 |
