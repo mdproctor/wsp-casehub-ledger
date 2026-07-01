@@ -1,20 +1,19 @@
 # Session Handoff — 2026-07-01
 
-## Branch closed: issue-166-keydidresolver-doubled-header
+## Branch closed: issue-169-scim-provider-it-cdi
 
-Fixed both pre-existing identity test failures in one branch:
-- #166: KeyDIDResolverTest passed SPKI-encoded bytes where did:key multicodec
-  expects raw Ed25519 key bytes; also fixed incorrect alsoKnownAs assertion
-- #167: ScimActorDIDProviderTest referenced removed validateEndpoint() method;
-  updated to call ScimAgentLookup.validate()
+Fixed ScimActorDIDProviderIT CDI failure (#169) — two root causes:
+- `@Inject ScimActorDIDProvider` used implicit `@Default` qualifier but the bean
+  has `@ActorDIDSource` (a `@jakarta.inject.Qualifier`); added the qualifier.
+- `IdentityCacheInvalidator` used `instanceof ScimActorDIDProvider` which failed
+  against `CompositeActorDIDProvider` proxy; replaced with SPI `invalidate()` call.
 
-Filed #169 for pre-existing ScimActorDIDProviderIT CDI wiring failure that
-blocks `mvn test -pl runtime` (workaround: exclude the IT class).
+Garden entry submitted: GE-20260701-82f303 (composite defeats instanceof).
 
 ## Current state
 
-- `casehubio/ledger` main: `79e493c` — pushed
-- Issues #166, #167 closed; #169 filed
+- `casehubio/ledger` main: `aecf98e` — pushed
+- Issue #169 closed
 
 ## Paused branch
 
@@ -22,13 +21,12 @@ blocks `mvn test -pl runtime` (workaround: exclude the IT class).
 
 ## Immediate Next Step
 
-Fix #169 (ScimActorDIDProviderIT CDI failure) — S/Med, blocks full test suite.
+Pick from What's Next — no trailing obligations.
 
 ## What's Next
 
 | # | Description | Scale | Complexity | Notes |
 |---|-------------|-------|------------|-------|
-| #169 | ScimActorDIDProviderIT CDI wiring failure | S | Med | blocks mvn test -pl runtime |
 | #137 | Artifact trust scoring (content-hashed artifacts) | L | High | paused — waiting for casehub-ops consumer |
 | #101 | Vault AppRole/OIDC auth for VaultTransitAgentSigner | M | High | blocker #85 closed — ready |
 | #96 | Code-generation for reactive service tier | L | High | wait until service pair count >= 5 |
