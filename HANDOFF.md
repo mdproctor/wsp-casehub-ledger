@@ -1,37 +1,34 @@
 # Session Handoff — 2026-07-01
 
-## Branch closed: issue-164-signing-adapter-polish
+## Branch closed: issue-166-keydidresolver-doubled-header
 
-Fixed GCP and Azure signing adapter performance — pure Java `sign()` now accepts
-algorithm from cached context (matching AWS's existing correct pattern). Azure SDK
-clients cached in `DefaultAzureKeyVaultClientWrapper`. Housekeeping: SDK versions
-parameterized, TestCurrentPrincipal consolidated, invalid P384 test key replaced,
-dead config classes deleted. Design review ($14.35) caught `SignatureAlgorithm` vs
-`componentSize` — algorithm is the primary abstraction.
+Fixed both pre-existing identity test failures in one branch:
+- #166: KeyDIDResolverTest passed SPKI-encoded bytes where did:key multicodec
+  expects raw Ed25519 key bytes; also fixed incorrect alsoKnownAs assertion
+- #167: ScimActorDIDProviderTest referenced removed validateEndpoint() method;
+  updated to call ScimAgentLookup.validate()
 
-Two pre-existing test failures filed: #166 (KeyDIDResolverTest doubled X.509 header),
-#167 (ScimActorDIDProviderTest invalid method reference).
+Filed #169 for pre-existing ScimActorDIDProviderIT CDI wiring failure that
+blocks `mvn test -pl runtime` (workaround: exclude the IT class).
 
 ## Current state
 
-- `casehubio/ledger` main: `2d6c258` — pushed
-- Issue #164 closed
-- All signing module tests pass (pure Java + Quarkus integration)
+- `casehubio/ledger` main: `79e493c` — pushed
+- Issues #166, #167 closed; #169 filed
 
 ## Paused branch
 
-- `issue-137-artifact-trust-scoring` #137 — paused mid-brainstorm. No consumer exists yet. Resume with `/work`.
+- `issue-137-artifact-trust-scoring` #137 — paused mid-brainstorm. No consumer exists yet.
 
 ## Immediate Next Step
 
-Fix the two pre-existing test failures (#166, #167) — both are XS/Low.
+Fix #169 (ScimActorDIDProviderIT CDI failure) — S/Med, blocks full test suite.
 
 ## What's Next
 
 | # | Description | Scale | Complexity | Notes |
 |---|-------------|-------|------------|-------|
-| #166 | KeyDIDResolverTest doubled X.509 header | XS | Low | pre-existing |
-| #167 | ScimActorDIDProviderTest invalid method reference | XS | Low | pre-existing |
+| #169 | ScimActorDIDProviderIT CDI wiring failure | S | Med | blocks mvn test -pl runtime |
 | #137 | Artifact trust scoring (content-hashed artifacts) | L | High | paused — waiting for casehub-ops consumer |
 | #101 | Vault AppRole/OIDC auth for VaultTransitAgentSigner | M | High | blocker #85 closed — ready |
 | #96 | Code-generation for reactive service tier | L | High | wait until service pair count >= 5 |
