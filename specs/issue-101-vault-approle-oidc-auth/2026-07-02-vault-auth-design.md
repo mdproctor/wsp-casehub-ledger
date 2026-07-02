@@ -73,36 +73,39 @@ Wraps a `String`. `token()` returns it unchanged. `invalidate()` is a no-op
 
 ### LoginBasedVaultTokenSource
 
-Abstract base. Owns the token cache: stores `clientToken` + `expiresAt` as
-`volatile` fields. Thread safety via double-checked locking — the common path
+Abstract base. Owns the token cache as a single `volatile` reference to an
+immutable `TokenState` record, ensuring atomic observation of both the token
+and its expiry. Thread safety via double-checked locking — the common path
 (cached token valid, ~59 minutes out of 60) is lock-free; `synchronized` is
 only acquired during the brief renewal window. On Java 26 JVM (biased locking
 removed since JDK 18), this avoids thin-lock acquisition on every `token()` call
 under concurrent `@PrePersist` load.
 
 ```java
-private volatile String clientToken;
-private volatile Instant expiresAt = Instant.EPOCH;
+private record TokenState(String token, Instant expiresAt) {}
+private volatile TokenState state = new TokenState(null, Instant.EPOCH);
 
 public String token() {
-    if (!isExpired()) return clientToken; // fast path, no lock
+    TokenState s = state; // single volatile read — both fields consistent
+    if (s.token() != null && !isExpired(s)) return s.token(); // fast path, no lock
     synchronized (this) {
-        if (!isExpired()) return clientToken; // recheck under lock
-        login();
-        return clientToken;
+        s = state; // recheck under lock
+        if (s.token() != null && !isExpired(s)) return s.token();
+        login(); // sets state = new TokenState(newToken, newExpiresAt)
+        return state.token();
     }
 }
 
 public void invalidate() {
-    clientToken = null;
-    expiresAt = Instant.EPOCH;
+    state = new TokenState(null, Instant.EPOCH); // single volatile write
 }
 ```
 
-`login()` must set `clientToken` before `expiresAt` to ensure correct
-visibility ordering — a concurrent reader may see the new token with the
-old (expired) `expiresAt`, triggering a harmless re-login, but never an old
-token with a new `expiresAt`.
+Using a single volatile reference eliminates the race condition that two
+separate volatile fields would create: with separate `clientToken` and
+`expiresAt` fields, a concurrent `invalidate()` between the two reads in
+`token()` could cause `token()` to return `null`. The `TokenState` record
+ensures both fields are always observed as a consistent pair.
 
 Constructor takes:
 - `String vaultAddress` — base URL (e.g. `http://vault:8200`)
@@ -183,15 +186,24 @@ token source, avoiding duplicate connection pools against the same Vault server.
 Similarly, the `ObjectMapper` is accepted as a constructor parameter and shared
 with the token source.
 
+HTTP 403 responses throw `VaultAuthenticationException` (not generic
+`RuntimeException`), enabling type-safe catch in the adapter's retry logic.
+All other non-200 responses continue to throw `RuntimeException`.
+
 ## Error handling
 
 Follows the `AgentSigner` contract: throw `RuntimeException` for transient failures.
 
+`VaultAuthenticationException extends RuntimeException` is thrown by the signing
+client on HTTP 403 specifically. This gives the adapter a type-safe signal to
+distinguish retriable auth failures from other errors (500, network, parse)
+without fragile message-string matching.
+
 - **Login fails:** `token()` throws → adapter's `performSign()` throws →
   entry saved unsigned. Nothing cached on failure — next call retries.
 - **Token expired between check and use:** Vault returns 403 on the sign call →
-  signing client throws → adapter catches, invalidates token source, retries
-  once with a fresh token (see below).
+  signing client throws `VaultAuthenticationException` → adapter catches,
+  invalidates token source, retries once with a fresh token (see below).
 - **Out-of-band token revocation:** Vault token revoked externally (operator
   action, Vault restart, policy change) while the cached token appears valid.
   Without invalidation, every signing call fails for the remaining token TTL
@@ -201,17 +213,17 @@ Follows the `AgentSigner` contract: throw `RuntimeException` for transient failu
 ### 403-retry in the adapter, not the signing client
 
 The signing client (`VaultTransitSigningClient`) is stateless with respect to
-auth — it receives a `String token` per call and throws on 403. The 403-retry
-lives in `VaultTransitAgentSigner` (Quarkus adapter), which owns the
-`VaultTokenSource`:
+auth — it receives a `String token` per call and throws
+`VaultAuthenticationException` on 403. The 403-retry lives in
+`VaultTransitAgentSigner` (Quarkus adapter), which owns the `VaultTokenSource`:
 
 1. Adapter calls `tokenSource.token()` → gets cached token
 2. Passes token to `client.sign(token, keyName, data)`
-3. Client throws on 403
-4. Adapter calls `tokenSource.invalidate()` → clears cached token
+3. Client throws `VaultAuthenticationException` on 403
+4. Adapter catches `VaultAuthenticationException`, calls `tokenSource.invalidate()`
 5. Adapter calls `tokenSource.token()` → triggers re-login, gets fresh token
 6. Adapter retries `client.sign(newToken, keyName, data)` — once only
-7. If retry also fails → throws → entry saved unsigned
+7. If retry also throws → rethrow → entry saved unsigned
 
 This preserves clean layering: the signing client doesn't know about token
 sources or lifecycle. The adapter bridges auth and signing. The retry is
@@ -300,7 +312,15 @@ fetch public key → sign data. Validates the full flow through
 ### Layer 3 — Quarkus CDI test (`vault-transit-quarkus/`)
 
 `VaultTransitAgentSignerIT` — updated config. Config validation tests for
-missing required fields per auth method.
+missing required fields per auth method. 403-retry tests:
+
+- **403-retry succeeds:** sign succeeds → token revoked → sign gets 403 →
+  adapter catches `VaultAuthenticationException`, invalidates, re-logins,
+  retries → sign succeeds with fresh token
+- **403-retry exhausted:** both initial and retry sign calls return 403 →
+  entry saved unsigned (verifies bounded retry)
+- **403 on fetchPublicKey:** `loadContext()` gets 403 on key fetch → adapter
+  invalidates, re-logins, retries key fetch → context loaded
 
 No real Vault dev server. No Docker requirement.
 
@@ -315,8 +335,9 @@ No real Vault dev server. No Docker requirement.
 | `LoginBasedVaultTokenSource.java` | NEW |
 | `AppRoleVaultTokenSource.java` | NEW |
 | `KubernetesVaultTokenSource.java` | NEW |
+| `VaultAuthenticationException.java` | NEW |
 | `VaultTransitSigningConfig.java` | BREAKING — drop `token`, keep `(address, keyMapping)` |
-| `VaultTransitSigningClient.java` | BREAKING — `token` as per-call parameter, accept shared `HttpClient` + `ObjectMapper` |
+| `VaultTransitSigningClient.java` | BREAKING — `token` as per-call parameter, accept shared `HttpClient` + `ObjectMapper`; 403 → `VaultAuthenticationException` |
 | `VaultTransitContext.java` | unchanged |
 | Tests: 4 new, 1 modified | see Testing section |
 
@@ -326,15 +347,24 @@ No real Vault dev server. No Docker requirement.
 |------|--------|
 | `VaultTransitConfig.java` | BREAKING — drop `token()`, add `auth()` |
 | `VaultTransitAgentSigner.java` | MODIFY — create token source from config |
+| `VaultTransitAgentSignerIT.java` | MODIFY — update config, add 403-retry tests |
+| `application.properties` (test) | MODIFY — `token` → `auth.token` |
+
+### Examples (`examples/vault-transit-signing/`)
+
+| File | Change |
+|------|--------|
+| `application.properties` (main) | MODIFY — `token` → `auth.method=token` + `auth.token` |
+| `application.properties` (test) | MODIFY — `token` → `auth.method=token` + `auth.token` |
 | `VaultTransitAgentSignerIT.java` | MODIFY — update config structure |
 
-**Total: 9 new files, 6 modified. Zero new modules. Zero new dependencies.**
+**Total: 10 new files, 10 modified. Zero new modules. Zero new dependencies.**
 
-New source: 5 (`VaultTokenSource`, `StaticVaultTokenSource`, `LoginBasedVaultTokenSource`,
-`AppRoleVaultTokenSource`, `KubernetesVaultTokenSource`).
+New source: 6 (`VaultTokenSource`, `StaticVaultTokenSource`, `LoginBasedVaultTokenSource`,
+`AppRoleVaultTokenSource`, `KubernetesVaultTokenSource`, `VaultAuthenticationException`).
 New test: 4 (`StaticVaultTokenSourceTest`, `AppRoleVaultTokenSourceTest`,
 `KubernetesVaultTokenSourceTest`, `VaultTransitAuthIntegrationTest`).
-Modified source: 4. Modified test: 2.
+Modified source: 4. Modified test: 2. Modified config/properties: 4.
 
 ## Platform coherence
 
