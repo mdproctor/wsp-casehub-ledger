@@ -7,45 +7,71 @@
 ## Problem
 
 `LedgerEntryRepository` (the write interface) lives in `runtime/`, referencing
-`runtime.model.LedgerEntry`. Consumers at the api tier — notably blocks#12
-(routing accountability) — cannot write ledger entries without depending on
-ledger runtime.
+`runtime.model.LedgerEntry`. Consumers at the api tier cannot write ledger
+entries without depending on ledger runtime.
 
 The api module has shadow copies of entity classes (`LedgerEntry`,
 `LedgerAttestation`, supplements) that are architecturally correct in intent but
 never completed: zero consumer references. Everyone uses the runtime types.
 
-Additionally, the runtime `LedgerEntry` bundles three concerns on one class:
-data model, verification infrastructure, and JPA entity mapping. This ties
-persistence to JPA, violating the platform's SPI standard — the platform
-supports H2, PostgreSQL, MongoDB, and Redis.
+Additionally, the runtime `LedgerEntry` bundles two concerns on one class:
+data model (fields, supplement helpers, canonical bytes) and JPA entity mapping
+(`@Entity`, `@Inheritance`, `@NamedQuery`, `@PrePersist`, `@EntityListeners`).
+Separating these concerns follows the pattern already established by
+`LedgerAttestation`, where `api.model.LedgerAttestation` is `@MappedSuperclass`
+and `runtime.model.LedgerAttestation` is the `@Entity`.
 
 ## Design
 
-### Three-tier model hierarchy
+### Two-tier model hierarchy
 
 ```
-api.model.LedgerEntry                        — plain abstract class
-                                               consumer-facing fields, supplement helpers
-                                               NO JPA annotations, NO persistence coupling
+api.model.LedgerEntry                        — @MappedSuperclass
+                                               ALL persistent fields with @Column
+                                               (core, signing, DID, supplementJson)
+                                               @Transient supplements list + helpers
+                                               canonicalBytes(), domainContentBytes()
+                                               NO @Entity, NO @Inheritance, NO @Table
+                                               NO @NamedQuery, NO @PrePersist
 
-runtime.model.VerifiedLedgerEntry            — extends api.model.LedgerEntry
-                                               adds: canonicalBytes(), domainContentBytes()
-                                               adds: agentSignature, agentPublicKey, agentKeyRef
-                                               adds: actorDid, pendingIdentityStatus
-                                               domain logic — persistence-independent
-
-runtime.model.jpa.JpaLedgerEntry             — extends VerifiedLedgerEntry
-                                               @Entity, @Inheritance(JOINED), @Table("ledger_entry")
-                                               @Column on ALL inherited fields
+runtime.model.jpa.JpaLedgerEntry             — extends api.model.LedgerEntry
+                                               @Entity(name = "LedgerEntry"), @Inheritance(JOINED)
+                                               @Table("ledger_entry"), @DiscriminatorColumn
                                                @NamedQuery, @EntityListeners, @PrePersist
-                                               JPA persistence implementation only
+                                               @Transient pendingIdentityStatus
+                                               @OneToMany for JPA supplement persistence
 ```
 
-**Naming rationale:** `VerifiedLedgerEntry` because it adds the verification
-envelope — tamper evidence (canonicalBytes for Merkle leaf hash), cryptographic
-signing (agent bilateral signing), and identity binding (DID/VC). These are
-domain concerns that apply regardless of persistence backend.
+**Design rationale:** This follows the existing `LedgerAttestation` pattern,
+where `api.model.LedgerAttestation` is `@MappedSuperclass` with `@Column`
+annotations and `runtime.model.LedgerAttestation` adds `@Entity`, `@Table`,
+`@NamedQuery`, `@PrePersist`. The api module already depends on
+`jakarta.persistence-api` (provided scope) for exactly this purpose.
+
+All persistent fields — including agent signing (`agentSignature`,
+`agentPublicKey`, `agentKeyRef`), DID binding (`actorDid`), and hash chain
+(`digest`) — belong on `api.model.LedgerEntry` because they are persisted
+columns on every entry. `canonicalBytes()` and `domainContentBytes()` also
+belong here: they compute over the data model fields and are needed by any
+persistence backend that maintains tamper evidence.
+
+The `@Transient pendingIdentityStatus` field stays on `JpaLedgerEntry` — it
+is a runtime implementation detail (set by an enricher, read by an entity
+listener, never persisted).
+
+**Supplement persistence:** `api.model.LedgerEntry` declares supplements as
+`@Transient` (for the api-tier helper methods). `JpaLedgerEntry` adds an
+internal `@OneToMany` field for JPA cascade persistence. `JpaLedgerEntry`
+overrides `attach()` to synchronise both lists, and uses `@PostLoad` to
+populate the transient list on entity load.
+
+**ID assignment:** `api.model.LedgerEntry` constructor eagerly assigns
+`id = UUID.randomUUID()`. This ensures non-JPA backends have an ID without
+requiring JPA lifecycle callbacks. `JpaLedgerEntry`'s `@PrePersist` remains
+as a defensive fallback.
+
+**JPQL compatibility:** `@Entity(name = "LedgerEntry")` on `JpaLedgerEntry`
+preserves the entity name used in all `@NamedQuery` JPQL (`FROM LedgerEntry e`).
 
 Consumer subclasses extend the appropriate tier:
 
@@ -55,30 +81,37 @@ Consumer subclasses extend the appropriate tier:
 public class CaseLedgerEntry extends JpaLedgerEntry { ... }
 
 // Non-JPA consumer (hypothetical MongoDB)
-public class MongoCaseLedgerEntry extends VerifiedLedgerEntry { ... }
+public class MongoCaseLedgerEntry extends LedgerEntry { ... }
 ```
 
-### LedgerAttestation — two tiers (no verification layer)
+### Internal subclasses requiring reparenting
 
-Attestations have no agent signing, no canonicalBytes, no DID binding — they
-don't need a verification middle tier. Two-tier split:
+All production subclasses currently extending `runtime.model.LedgerEntry`
+must reparent to `runtime.model.jpa.JpaLedgerEntry`:
 
-```
-api.model.LedgerAttestation                  — plain class, fields only (remove existing
-                                               @MappedSuperclass and @Column annotations)
-runtime.model.jpa.JpaLedgerAttestation       — @Entity, @Table, @Column mappings
-```
+| Class | File | Notes |
+|---|---|---|
+| `PlainLedgerEntry` | `runtime/model/PlainLedgerEntry.java` | @Entity, @Table, @DiscriminatorValue |
+| `KeyRotationEntry` | `runtime/model/KeyRotationEntry.java` | @Entity, @Table, @DiscriminatorValue, domain fields |
+| `ErasureReceiptLedgerEntry` | `runtime/model/ErasureReceiptLedgerEntry.java` | @Entity, @Table, @DiscriminatorValue, domain fields |
+| `ActorIdentityBindingEntry` | `runtime/model/ActorIdentityBindingEntry.java` | @Entity, @Table, @DiscriminatorValue, domain fields |
 
-### Same pattern for supplements
+Test subclasses across runtime and persistence-memory tests also need
+reparenting (TestLedgerEntry, ConcreteEntry, MemoryTestEntry, etc.).
 
-```
-api.model.supplement.LedgerSupplement        — plain abstract class
-api.model.supplement.ComplianceSupplement    — plain class, fields only
-api.model.supplement.ProvenanceSupplement    — plain class, fields only
-api.model.supplement.LedgerSupplementSerializer — static utility (unchanged)
+### LedgerAttestation — keep existing two-tier pattern
 
-runtime.model.supplement.*                   — JPA entity versions extending api types
-```
+`api.model.LedgerAttestation` already uses `@MappedSuperclass` with `@Id` and
+`@Column` annotations. `runtime.model.LedgerAttestation` extends it with
+`@Entity`, `@Table`, `@NamedQuery`, `@PrePersist`. This pattern is correct
+and unchanged — no annotations are removed.
+
+### Supplements — already done
+
+The api supplement classes (`LedgerSupplement`, `ComplianceSupplement`,
+`ProvenanceSupplement`) are already plain POJOs with zero JPA annotations.
+The runtime supplement classes already extend them with `@Entity`, `@Table`,
+`@Column` annotations. No changes needed to the supplement hierarchy.
 
 ### SPI placement
 
@@ -131,7 +164,7 @@ public interface LedgerAppender {
 }
 ```
 
-#### ReactiveledgerAppender
+#### ReactiveLedgerAppender
 
 ```java
 package io.casehub.ledger.api.spi;
@@ -155,6 +188,13 @@ public record AuditRecord(
     Instant occurredAt,
     UUID causedByEntryId
 ) {
+    public AuditRecord {
+        if (entryType == LedgerEntryType.ATTESTATION) {
+            throw new IllegalArgumentException(
+                "AuditRecord does not support ATTESTATION — use OutcomeRecorder for attestations");
+        }
+    }
+
     public static AuditRecord event(String actorId, UUID subjectId) {
         return new AuditRecord(subjectId, actorId, ActorType.AGENT, null,
             LedgerEntryType.EVENT, null, null);
@@ -169,6 +209,17 @@ public record AuditRecord(
 Runtime provides `DefaultLedgerAppender` (`@DefaultBean @ApplicationScoped`):
 creates `PlainLedgerEntry` from `AuditRecord`, delegates to
 `LedgerEntryRepository.save()`, returns the assigned `id`.
+
+### NoOp implementations
+
+Platform convention requires `@DefaultBean` no-op implementations for all
+store SPIs. New no-ops in `runtime/`:
+
+- `NoOpLedgerAppender` — returns `UUID.randomUUID()` without persisting
+- `NoOpReactiveLedgerAppender` — returns `Uni.createFrom().item(UUID.randomUUID())`
+
+Existing no-ops (`NoOpLedgerEntryRepository`, `NoOpReactiveLedgerEntryRepository`)
+need import updates after the interface moves to `api/spi/`.
 
 ### Dead api model cleanup
 
@@ -189,6 +240,19 @@ Not consumer-facing — internal to ledger implementation:
 - `LedgerMerkleFrontierRepository`
 - `ActorTrustScoreRepository`
 
+### persistence-memory module updates
+
+The following classes in `persistence-memory/` implement `LedgerEntryRepository`
+or `ReactiveLedgerEntryRepository` and need import updates after the interface
+moves to `api/spi/`:
+
+- `InMemoryLedgerEntryRepository`
+- `InMemoryReactiveLedgerEntryRepository`
+- `InMemoryCrossTenantLedgerEntryRepository`
+- `InMemoryCrossTenantReactiveLedgerEntryRepository`
+
+Test subclasses (e.g. `MemoryTestEntry`) need reparenting.
+
 ## Related issues
 
 - **#172** — OutcomeRecord supplementary data (enriches existing write path)
@@ -199,11 +263,17 @@ Not consumer-facing — internal to ledger implementation:
 
 This is a breaking change. No deployed instances exist.
 
-- `runtime.model.LedgerEntry` → renamed to `runtime.model.VerifiedLedgerEntry`
-- `runtime.model.jpa.JpaLedgerEntry` — new class, extends `VerifiedLedgerEntry`
-- `runtime.model.jpa.JpaLedgerAttestation` — new class, extends `api.model.LedgerAttestation`
+- `runtime.model.LedgerEntry` → split: fields and logic promoted to
+  `api.model.LedgerEntry` (`@MappedSuperclass`), JPA entity moved to
+  `runtime.model.jpa.JpaLedgerEntry` (`@Entity`)
 - Consumer subclass imports change: `extends LedgerEntry` → `extends JpaLedgerEntry`
+- Internal subclasses reparented: `PlainLedgerEntry`, `KeyRotationEntry`,
+  `ErasureReceiptLedgerEntry`, `ActorIdentityBindingEntry`
 - `LedgerEntryRepository` package changes: `runtime.repository` → `api.spi`
 - `ReactiveLedgerEntryRepository` package changes: `runtime.repository` → `api.spi`
-- All JPA annotations removed from api model types
+- `LedgerEntryEnricher.enrich()` parameter type changes:
+  `runtime.model.LedgerEntry` → `api.model.LedgerEntry`
 - Engine's 5 `NoOpLedgerEntryRepository` copies need import update (#173)
+- ARC42STORIES.MD §5 Key Files: update `LedgerEntry.java` and
+  `LedgerEntryRepository.java` references; update §5.3.1 save pipeline
+  description; update Layer Taxonomy L1 repository context
