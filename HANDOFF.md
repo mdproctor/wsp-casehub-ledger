@@ -29,6 +29,10 @@ Pick from What's Next — no trailing obligations.
 
 | # | Description | Scale | Complexity | Notes |
 |---|-------------|-------|------------|-------|
-| #171 | Browser-based Vault OIDC flow (two-step auth URL + callback) | M | Med | Filed this session; not needed until interactive admin tooling |
-| #137 | Artifact trust scoring (content-hashed artifacts) | L | High | paused — waiting for casehub-ops consumer |
-| #96 | Code-generation for reactive service tier | L | High | wait until service pair count >= 5 |
+| #161 | Update DIDResolver callers for actorId parameter | S | Low | Unblocked — platform#85 landed |
+| #165 | IdentityCacheInvalidator — use ActorDIDProvider.invalidate() | XS | Low | Unblocked — platform#128 landed |
+| #168 | Extract ledger write SPI to ledger-api | M | Med | Gates blocks#12 (routing accountability) |
+| #162 | REST endpoints for ledger entry query + Merkle proof | M | Med | Gates casehub-aml workbench UI |
+| #171 | Browser-based Vault OIDC flow (two-step auth URL + callback) | M | Med | Not needed until interactive admin tooling |
+| #137 | Artifact trust scoring (content-hashed artifacts) | L | High | Paused — waiting for casehub-ops consumer |
+| #96 | Code-generation for reactive service tier | L | High | Wait until service pair count >= 5 |
