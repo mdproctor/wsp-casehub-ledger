@@ -1,23 +1,21 @@
-# Session Handoff — 2026-07-03
+# Session Handoff — 2026-07-04
 
-## Branch closed: issue-101-vault-approle-oidc-auth
+## Branch closed: issue-170-vault-oidc-auth
 
-Added pluggable Vault auth to VaultTransitAgentSigner (#101):
-- VaultTokenSource SPI with StaticVaultTokenSource, AppRoleVaultTokenSource,
-  KubernetesVaultTokenSource — lazy renewal, clamped expiry buffer
-- Signing client now stateless (token as per-call parameter)
-- 403-retry in Quarkus adapter via tokenSource.invalidate() + single retry
-- VaultAuthenticationException for type-safe auth failure detection
+Added JWT auth method to Vault Transit signing adapter (#170):
+- `JwtVaultTokenSource` with `Supplier<String>` for JWT acquisition
+- `KubernetesVaultTokenSource` consolidated into `JwtVaultTokenSource.fromFile()`
+  with `mountPath="kubernetes"` — identical loginPath/loginRequestBody semantics
+- `AuthMethod.JWT` added to Quarkus config; `jwtPath` changed to `Optional<String>`
+  with auth-method-specific defaults; `jwt()` property for static JWT strings
+- Design review (2 rounds, 8 issues, 6 verified, 2 accepted) caught the consolidation
 
-Also fixed #169 (ScimActorDIDProviderIT CDI qualifier mismatch) on the same branch.
-
-Design review: 10 rounds, 14 issues raised, 11 verified, 2 accepted, 1 deferred.
-Garden entry: GE-20260701-82f303 (CompositeActorDIDProvider instanceof gotcha).
+Also filed #171 (browser-based OIDC — deferred, separate use case).
 
 ## Current state
 
-- `casehubio/ledger` main: `d1948e4` — pushed
-- Issues #101, #169 closed; #170 filed (actual OIDC auth, out of scope)
+- `casehubio/ledger` main: `1b392e9` — pushed
+- Issues #170 closed; #171 filed
 
 ## Paused branch
 
@@ -31,5 +29,6 @@ Pick from What's Next — no trailing obligations.
 
 | # | Description | Scale | Complexity | Notes |
 |---|-------------|-------|------------|-------|
+| #171 | Browser-based Vault OIDC flow (two-step auth URL + callback) | M | Med | Filed this session; not needed until interactive admin tooling |
 | #137 | Artifact trust scoring (content-hashed artifacts) | L | High | paused — waiting for casehub-ops consumer |
 | #96 | Code-generation for reactive service tier | L | High | wait until service pair count >= 5 |
