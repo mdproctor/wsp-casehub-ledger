@@ -60,10 +60,12 @@ is a runtime implementation detail (set by an enricher, read by an entity
 listener, never persisted).
 
 **Supplement persistence:** `api.model.LedgerEntry` declares supplements as
-`@Transient` (for the api-tier helper methods). `JpaLedgerEntry` adds an
-internal `@OneToMany` field for JPA cascade persistence. `JpaLedgerEntry`
-overrides `attach()` to synchronise both lists, and uses `@PostLoad` to
-populate the transient list on entity load.
+`@Transient` (for the api-tier helper methods). `JpaLedgerEntry` adds
+separate `@OneToMany` fields per supplement type (`complianceSupplements`,
+`provenanceSupplements`) for JPA cascade persistence. `JpaLedgerEntry`
+overrides `attach()` to synchronise both the transient list and the
+appropriate JPA list, and uses `@PostLoad` to populate the transient list
+from the JPA lists on entity load. See §Supplements for full details.
 
 **ID assignment:** `api.model.LedgerEntry` constructor eagerly assigns
 `id = UUID.randomUUID()`. This ensures non-JPA backends have an ID without
@@ -106,12 +108,87 @@ reparenting (TestLedgerEntry, ConcreteEntry, MemoryTestEntry, etc.).
 `@Entity`, `@Table`, `@NamedQuery`, `@PrePersist`. This pattern is correct
 and unchanged — no annotations are removed.
 
-### Supplements — already done
+### Supplements — two-tier refactoring
 
 The api supplement classes (`LedgerSupplement`, `ComplianceSupplement`,
-`ProvenanceSupplement`) are already plain POJOs with zero JPA annotations.
-The runtime supplement classes already extend them with `@Entity`, `@Table`,
-`@Column` annotations. No changes needed to the supplement hierarchy.
+`ProvenanceSupplement`) and their runtime counterparts are **parallel copies**
+with zero inheritance between them. Unlike `LedgerAttestation` (where
+`runtime.model.LedgerAttestation extends api.model.LedgerAttestation`), the
+supplement hierarchies are completely independent type trees. This must be
+fixed — without it, the two-tier `LedgerEntry` design does not compile.
+
+**Concrete failures without this fix:**
+1. `ProvenanceCaptureEnricher` creates `runtime.model.supplement.ProvenanceSupplement`
+   and calls `entry.attach(ps)`. After the two-tier refactoring, `attach()` on
+   `api.model.LedgerEntry` accepts `api.model.supplement.LedgerSupplement` — type error.
+2. `api.model.LedgerEntry.compliance()` uses `instanceof api.ComplianceSupplement`,
+   but JPA loads `runtime.ComplianceSupplement` — `instanceof` returns false.
+3. The `ledgerEntry` back-reference on runtime supplements points to
+   `runtime.model.LedgerEntry`, which no longer exists after the rename.
+
+**Design:** Each supplement type follows the two-tier pattern independently.
+Api classes become `@MappedSuperclass` with `@Column` annotations. Runtime
+classes extend their api counterparts as `@Entity`:
+
+```
+api.model.supplement.LedgerSupplement         — @MappedSuperclass
+                                                @Id on id, @Column on supplementType
+                                                @Transient ledgerEntry (in-memory back-ref)
+
+api.model.supplement.ComplianceSupplement     — @MappedSuperclass
+                                                extends api.LedgerSupplement
+                                                @Column on all compliance fields
+
+api.model.supplement.ProvenanceSupplement     — @MappedSuperclass
+                                                extends api.LedgerSupplement
+                                                @Column on all provenance fields
+
+runtime.model.supplement.JpaComplianceSupplement — @Entity
+                                                    @Table("ledger_supplement_compliance")
+                                                    extends api.ComplianceSupplement
+                                                    @ManyToOne + @JoinColumn for ledgerEntry
+                                                    @PrePersist for ID assignment
+
+runtime.model.supplement.JpaProvenanceSupplement — @Entity
+                                                    @Table("ledger_supplement_provenance")
+                                                    extends api.ProvenanceSupplement
+                                                    @ManyToOne + @JoinColumn for ledgerEntry
+                                                    @PrePersist for ID assignment
+```
+
+**JOINED inheritance is eliminated.** The current supplements use
+`@Inheritance(JOINED)` with a shared `ledger_supplement` base table and
+joined subtables. This is incompatible with the two-tier pattern: Java
+single inheritance prevents runtime supplements from both extending their
+api counterparts (required for `instanceof` type safety in `compliance()`
+and `provenance()` helpers) and sharing a common `@Entity` root (required
+for JOINED inheritance). Type safety is the non-negotiable constraint —
+`instanceof` checks are part of the api contract. JOINED inheritance is a
+persistence implementation detail. Each supplement type becomes its own
+independent entity with a self-contained table.
+
+**Schema change:** The current three-table schema (`ledger_supplement` +
+joined `ledger_supplement_compliance` + joined `ledger_supplement_provenance`)
+collapses to two self-contained tables. Each carries the base columns (`id`,
+`ledger_entry_id`, `supplement_type`) plus its type-specific columns. No
+deployed instances exist, so this is a clean schema change.
+
+**JpaLedgerEntry integration:** The single polymorphic
+`@OneToMany List<LedgerSupplement>` is replaced with separate per-type
+relationships on `JpaLedgerEntry`:
+- `@OneToMany List<JpaComplianceSupplement> complianceSupplements`
+- `@OneToMany List<JpaProvenanceSupplement> provenanceSupplements`
+
+The transient `supplements` list (inherited from `api.model.LedgerEntry`)
+is populated by `@PostLoad` from these JPA lists. `attach()` is overridden
+to synchronise both the transient list and the appropriate JPA list.
+
+**Serializer unification:** The duplicate `LedgerSupplementSerializer` in
+`runtime.model.supplement` is deleted. The api copy becomes canonical.
+
+**`runtime.model.supplement.LedgerSupplement` is deleted.** No runtime
+abstract supplement base is needed — each runtime supplement entity directly
+extends its api counterpart.
 
 ### SPI placement
 
@@ -218,8 +295,8 @@ store SPIs. New no-ops in `runtime/`:
 - `NoOpLedgerAppender` — returns `UUID.randomUUID()` without persisting
 - `NoOpReactiveLedgerAppender` — returns `Uni.createFrom().item(UUID.randomUUID())`
 
-Existing no-ops (`NoOpLedgerEntryRepository`, `NoOpReactiveLedgerEntryRepository`)
-need import updates after the interface moves to `api/spi/`.
+Existing `NoOpLedgerEntryRepository` needs import updates after the interface
+moves to `api/spi/`.
 
 ### Dead api model cleanup
 
@@ -274,6 +351,16 @@ This is a breaking change. No deployed instances exist.
 - `LedgerEntryEnricher.enrich()` parameter type changes:
   `runtime.model.LedgerEntry` → `api.model.LedgerEntry`
 - Engine's 5 `NoOpLedgerEntryRepository` copies need import update (#173)
+- `LedgerProcessor.LEDGER_ENTRY` DotName: `io.casehub.ledger.runtime.model.LedgerEntry`
+  → `io.casehub.ledger.api.model.LedgerEntry`. Without this update, the
+  `validateLedgerEntryFieldShadowing` and `validateDomainContentBytes` build-time
+  validators silently stop finding subclasses (empty `getAllKnownSubclasses` result).
+  The `@MappedSuperclass` base correctly catches all subclasses; the
+  `domainContentBytes` validator already filters on `@Entity`.
+- Supplement hierarchy: parallel copies unified into two-tier pattern. JOINED
+  inheritance (`ledger_supplement` base table) eliminated — each supplement type
+  becomes an independent entity with a self-contained table. `runtime.model.supplement.LedgerSupplement` deleted.
+  Runtime serializer deleted (api copy becomes canonical).
 - ARC42STORIES.MD §5 Key Files: update `LedgerEntry.java` and
   `LedgerEntryRepository.java` references; update §5.3.1 save pipeline
   description; update Layer Taxonomy L1 repository context
