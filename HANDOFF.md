@@ -1,21 +1,24 @@
-# Session Handoff — 2026-07-04
+# Session Handoff — 2026-07-05
 
-## Branch closed: issue-170-vault-oidc-auth
+## Branch closed: issue-168-extract-ledger-write-spi
 
-Added JWT auth method to Vault Transit signing adapter (#170):
-- `JwtVaultTokenSource` with `Supplier<String>` for JWT acquisition
-- `KubernetesVaultTokenSource` consolidated into `JwtVaultTokenSource.fromFile()`
-  with `mountPath="kubernetes"` — identical loginPath/loginRequestBody semantics
-- `AuthMethod.JWT` added to Quarkus config; `jwtPath` changed to `Optional<String>`
-  with auth-method-specific defaults; `jwt()` property for static JWT strings
-- Design review (2 rounds, 8 issues, 6 verified, 2 accepted) caught the consolidation
+Extracted ledger write SPI to api tier (#168). Two-tier JPA model hierarchy:
+`api.model.LedgerEntry` (`@MappedSuperclass`, all persistent fields, `canonicalBytes()`)
+and `runtime.model.jpa.JpaLedgerEntry` (`@Entity`, JPA machinery). Supplement JOINED
+inheritance eliminated — each type independent `@Entity`. `LedgerEntryRepository` and
+`ReactiveLedgerEntryRepository` moved to `api/spi`. New `LedgerAppender` SPI with
+`AuditRecord` value type. Dead api model duplicates deleted, `ScoreType` extracted.
 
-Also filed #171 (browser-based OIDC — deferred, separate use case).
+Design review: 4 rounds, 18 issues, all resolved. ADR 0017 recorded.
+Garden entry GE-20260705-7c0e86 (Hibernate bytecode enhancement strips @Transient from @MappedSuperclass).
+
+Also closed #161, #165 (already implemented in prior sessions).
+Filed #173 (engine NoOp consolidation), #174 (platform persistence unification).
 
 ## Current state
 
-- `casehubio/ledger` main: `1b392e9` — pushed
-- Issues #170 closed; #171 filed
+- `casehubio/ledger` main: `e021fd4` — pushed
+- Issues #168 closed; #161, #165 closed; #173, #174 filed
 
 ## Paused branch
 
@@ -29,9 +32,7 @@ Pick from What's Next — no trailing obligations.
 
 | # | Description | Scale | Complexity | Notes |
 |---|-------------|-------|------------|-------|
-| #161 | Update DIDResolver callers for actorId parameter | S | Low | Unblocked — platform#85 landed |
-| #165 | IdentityCacheInvalidator — use ActorDIDProvider.invalidate() | XS | Low | Unblocked — platform#128 landed |
-| #168 | Extract ledger write SPI to ledger-api | M | Med | Gates blocks#12 (routing accountability) |
+| #173 | Consolidate engine NoOpLedgerEntryRepository copies into shared test-support artifact | S | Low | Unblocked by #168 |
 | #162 | REST endpoints for ledger entry query + Merkle proof | M | Med | Gates casehub-aml workbench UI |
 | #171 | Browser-based Vault OIDC flow (two-step auth URL + callback) | M | Med | Not needed until interactive admin tooling |
 | #137 | Artifact trust scoring (content-hashed artifacts) | L | High | Paused — waiting for casehub-ops consumer |
