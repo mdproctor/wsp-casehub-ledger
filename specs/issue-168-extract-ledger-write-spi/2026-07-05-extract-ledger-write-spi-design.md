@@ -287,13 +287,25 @@ Runtime provides `DefaultLedgerAppender` (`@DefaultBean @ApplicationScoped`):
 creates `PlainLedgerEntry` from `AuditRecord`, delegates to
 `LedgerEntryRepository.save()`, returns the assigned `id`.
 
-### NoOp implementations
+### NoOp and default bean strategy
 
-Platform convention requires `@DefaultBean` no-op implementations for all
-store SPIs. New no-ops in `runtime/`:
+Platform convention requires `@DefaultBean` no-op implementations for
+**store SPIs** — interfaces whose implementations directly perform
+persistence. **Service SPIs** that delegate to store SPIs do not get
+separate NoOps; NoOp behavior cascades from the store tier.
 
-- `NoOpLedgerAppender` — returns `UUID.randomUUID()` without persisting
-- `NoOpReactiveLedgerAppender` — returns `Uni.createFrom().item(UUID.randomUUID())`
+| SPI | Kind | CDI strategy |
+|---|---|---|
+| `LedgerEntryRepository` | Store | `NoOpLedgerEntryRepository` (`@DefaultBean`), `JpaLedgerEntryRepository` (`@Alternative`) |
+| `OutcomeRecorder` | Service | `DefaultOutcomeRecorder` (`@DefaultBean`), no NoOp — cascades via repository |
+| `LedgerAppender` (new) | Service | `DefaultLedgerAppender` (`@DefaultBean`), no NoOp — cascades via repository |
+| `ReactiveLedgerAppender` (new) | Service | `DefaultReactiveLedgerAppender` (`@DefaultBean`), no NoOp — cascades via repository |
+
+`DefaultLedgerAppender` creates a `PlainLedgerEntry` from the `AuditRecord`
+and delegates to `LedgerEntryRepository.save()`. When
+`NoOpLedgerEntryRepository` is active, `save()` returns the entry unchanged
+and `append()` returns the eagerly-assigned UUID. This is correct NoOp
+behavior without a dedicated `NoOpLedgerAppender`.
 
 Existing `NoOpLedgerEntryRepository` needs import updates after the interface
 moves to `api/spi/`.
