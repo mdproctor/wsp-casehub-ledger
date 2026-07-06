@@ -2,6 +2,7 @@
 
 | File | Date | Title |
 |------|------|-------|
+| [2026-07-06-mdp01-the-adapter-that-was-always-missing.md](2026-07-06-mdp01-the-adapter-that-was-always-missing.md) | 2026-07-06 | REST adapter module pattern — first-principles analysis of platform REST architecture; Ports & Adapters applied to HTTP; casehub-ledger-rest as first implementation |
 | [2026-06-18-mdp01-the-race-that-wasnt.md](2026-06-18-mdp01-the-race-that-wasnt.md) | 2026-06-18 | ON CONFLICT DO NOTHING concurrency analysis; H2 2.4.240 rejects named-target DO UPDATE; three-way dialect enum |
 | [2026-06-28-mdp01-the-channel-you-dont-fire.md](2026-06-28-mdp01-the-channel-you-dont-fire.md) | 2026-06-28 | CDI dual-channel normalisation — latent bug in reactive key rotation cache invalidation; fireAsync() await coupling SUSPECT verdict to observer delivery; every producer fires both channels |
 | [2026-06-18-mdp02-the-query-at-hour-one.md](2026-06-18-mdp02-the-query-at-hour-one.md) | 2026-06-18 | Hibernate 6 HAVING arithmetic dialect gap (H2 silent, PostgreSQL rejects); @NamedQuery as startup validation; CDI self-injection for per-check TX isolation |
