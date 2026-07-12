@@ -1,19 +1,23 @@
-# Session Handoff — 2026-07-07
+# Session Handoff — 2026-07-12
 
-## Diagnostic session — no code changes
+## Branch closed: issue-172-outcome-record-supplementary
 
-Investigated GitHub Packages API reporting `casehub-ledger:0.2-SNAPSHOT` `updated_at`
-as May 1. Root cause: the API shows version *creation* date, not last artifact upload.
-CI logs confirm `mvn deploy` uploads fresh artifacts on every push to main. No action
-needed — publishing is working correctly.
+Added `metadata` field to `LedgerEntry`, `OutcomeRecord`, and `AuditRecord` (#172).
+Consumer-provided freeform JSON audit context (routing rationale, candidate lists,
+decision explanations). Positional in `canonicalBytes()`, size-limited at 64KB,
+propagated to archiver, PROV export, and REST DTO. V1011 migration. Design-reviewed
+($16.23, 5 rounds, 18 issues — all resolved). Issue #178 filed for future field-level
+GDPR erasure if PII is ever needed in metadata.
 
 ## Current state
 
-*Unchanged — `git show HEAD~1:HANDOFF.md`*
+- `casehubio/ledger` main: `449470c` — pushed
+- Issue #172 closed
+- Issue #178 filed (deferred — field-level GDPR erasure for metadata)
 
 ## Paused branch
 
-*Unchanged — `git show HEAD~1:HANDOFF.md`*
+- `issue-137-artifact-trust-scoring` #137 — paused mid-brainstorm. No consumer exists yet.
 
 ## Immediate Next Step
 
@@ -21,4 +25,8 @@ Pick from What's Next — no trailing obligations.
 
 ## What's Next
 
-*Unchanged — `git show HEAD~1:HANDOFF.md`*
+| # | Description | Scale | Complexity | Notes |
+|---|-------------|-------|------------|-------|
+| #171 | Browser-based Vault OIDC flow (two-step auth URL + callback) | M | Med | Not needed until interactive admin tooling |
+| #137 | Artifact trust scoring (content-hashed artifacts) | L | High | Paused — waiting for casehub-ops consumer |
+| #96 | Code-generation for reactive service tier | L | High | Wait until service pair count >= 5 |
