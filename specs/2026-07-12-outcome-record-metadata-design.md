@@ -218,8 +218,18 @@ AuditRecord.event(actorId, subjectId)
 
 - `OutcomeRecorderIT` — metadata on `OutcomeRecord` flows to persisted entry
 - `ReactiveOutcomeRecorderIT` — same through reactive bridge
-- Canonical bytes test — verify metadata included in hash
+- `LedgerAppenderIT` — metadata on `AuditRecord` flows to persisted entry
+  via `DefaultLedgerAppender.append()`
+- Canonical bytes test — verify metadata included in hash, verify null
+  metadata renders as empty string in positional slot
 - `LedgerEntryArchiver` test — metadata appears in archive JSON
+- `LedgerProvSerializerTest` — `ledger:metadata` property present on PROV
+  entity when metadata is set; omitted when metadata is null
+- Size limit tests (both `OutcomeRecordSaveService` and
+  `DefaultLedgerAppender` paths):
+  - metadata within limit is persisted
+  - metadata exceeding configured max throws `IllegalArgumentException`
+  - metadata exactly at the limit succeeds
 
 ## Not in scope
 
@@ -229,4 +239,4 @@ AuditRecord.event(actorId, subjectId)
   Documented as "should be valid JSON" in Javadoc. Same as `supplementJson`.
 - **Field-level GDPR erasure** — metadata is constrained to not contain PII
   (see §GDPR above). If a future use case requires PII in metadata,
-  field-level erasure must be designed then. Tracked as casehubio/ledger#TBD.
+  field-level erasure must be designed then (casehubio/ledger#178).
