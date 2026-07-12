@@ -64,13 +64,16 @@ New field on `LedgerEntry` (`@MappedSuperclass` in api module):
 public String metadata;
 ```
 
-New migration V1010 (`ledger_entry` table), consistent with the V1002 pattern
-for `supplement_json`:
+New migration V1011 (`ledger_entry` table), consistent with the V1002 pattern
+for `supplement_json`. V1010 is already taken by `erasure_receipt_entry`.
 
 ```sql
--- V1010 — Add metadata column for consumer-provided audit context
+-- V1011 — Add metadata column for consumer-provided audit context
 ALTER TABLE ledger_entry ADD COLUMN metadata TEXT;
 ```
+
+`FlywayLocationContractTest` assertion updated from 11 to 12 expected
+migrations (V1000–V1011).
 
 **Why `String` not `Map<String, Object>`:** The API module is pure Java with no
 Jackson dependency. `String` is consistent with `supplementJson`. Consumer
