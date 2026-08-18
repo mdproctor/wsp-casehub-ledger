@@ -2,7 +2,7 @@
 
 ## State
 branch: issue-186-cdi-cleanup-and-exception-mapper
-state: active
+state: paused
 project-sha: dc1f1a6aafa9f4ba2d0f9bd5e31585bbb85d8ca9
 date: 2026-08-10
 issue-repo: casehubio/ledger
