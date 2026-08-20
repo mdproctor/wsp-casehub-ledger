@@ -2,7 +2,7 @@
 
 ## State
 branch: issue-191-exception-mapper-fix
-state: closing:review
+state: closing:verified
 project-sha: 86c34622e2f6b1aefb40533f0604dc44b3f444c0
 date: 2026-08-20
 issue-repo: casehubio/ledger
