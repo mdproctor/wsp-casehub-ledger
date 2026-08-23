@@ -2,7 +2,7 @@
 
 ## State
 branch: issue-202-qhorus-query-apis
-state: closing:verified
+state: closing:promoted
 project-sha: 79184ca2103ee15062b82e95add556e09d69db6a
 date: 2026-08-22
 issue-repo: casehubio/ledger
