@@ -20,6 +20,11 @@ Stream<LedgerEntry> streamBySubjectId(UUID subjectId, String tenancyId);
 Stream<LedgerEntry> streamByActorId(String actorId, Instant from, Instant to, String tenancyId);
 ```
 
+**Ordering:** `streamBySubjectId` returns entries in sequence order
+ascending. `streamByActorId` returns entries ordered by `occurredAt`
+ascending. Time range `[from, to]` is inclusive on both bounds —
+consistent with existing `findByActorId`.
+
 **Resource lifecycle contract:** The returned `Stream` must be consumed
 within the caller's transaction scope and closed explicitly via
 try-with-resources. Failing to close leaks a database cursor in the JPA
@@ -60,7 +65,13 @@ AttestationSummary summariseAttestationsByActor(String actorId, Instant from, In
 ```
 
 All three JOIN `LedgerEntry` with `LedgerAttestation` and aggregate by
-`AttestationVerdict`. The time range filters on `LedgerEntry.occurredAt`.
+`AttestationVerdict`. The time range `[from, to]` is inclusive on both
+bounds, filtering on `LedgerEntry.occurredAt`.
+
+**Empty-result contract:** When the actor/subject has entries but no
+attestations in the time range, verdict count maps are empty (not null)
+and `AttestationSummary` returns `totalAttestations = 0` with confidence
+fields set to `0.0`.
 
 **No `outcome` field on `LedgerEntry`.** The ledger separates decisions
 (entries) from assessments (attestations). Aggregating by verdict on the
@@ -110,6 +121,18 @@ outcomes without an `outcome` field on `LedgerEntry`:
 
 4. **Confidence distribution** — `summariseAttestationsByActor` returns
    mean/min/max confidence, demonstrating quality-of-assessment metrics
+
+5. **Streaming traversal** — write entries via `OutcomeRecorder`, stream
+   back via `streamBySubjectId`, verify correct order and completeness.
+   Verify stream is closeable without side effects.
+
+6. **Cursor pagination** — write N entries, page through with
+   `findBySubjectIdPaged` using `afterSequence` from each page's last
+   entry, verify all entries are returned exactly once.
+
+7. **Empty results** — actor with entries but no attestations returns
+   empty verdict map. Actor with no entries at all returns empty map.
+   `AttestationSummary` with zero attestations returns `totalAttestations = 0`.
 
 ## Protocol Compliance
 
