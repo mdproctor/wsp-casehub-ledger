@@ -19,3 +19,26 @@
 **Sources:** LedgerEntryRepository.java (15 existing methods), InMemoryLedgerEntryRepository.java
 **Exploration:** quick
 **Status:** captured
+
+## D3: Both streaming and cursor-based pagination
+
+**Choice:** Option C — add `Stream<LedgerEntry>` methods for in-process traversal AND cursor-based pagination for paged external access
+**Alternatives:**
+- Stream only (Option A) — simpler but forces fetch loops for REST/GraphQL consumers
+- Cursor only (Option B) — no resource lifecycle concerns but unnatural for in-process batch traversal
+**Rationale:** Three methods total (2 stream + 1 cursor) is light. Streaming fits qhorus formal verification (in-process batch). Cursor fits future REST/GraphQL paging. Both are additive, non-overlapping use cases. In-memory cursor implementation is a trivial subList().
+**Trade-offs:** Stream methods require callers to manage resource lifecycle (try-with-resources, transactional scope). SPI Javadoc must document this clearly.
+**Sources:** Issue #202, JPA `getResultStream()` API
+**Exploration:** quick
+**Status:** captured
+
+## D4: Simple maps and records for aggregate return types
+
+**Choice:** Concrete return types — `Map<AttestationVerdict, Long>` for verdict counts, `AttestationSummary` record for the full summary
+**Alternatives:**
+- Generic `AggregateResult` container — more extensible but over-engineered for three concrete queries
+**Rationale:** Three specific methods with clear return types. `AttestationSummary` record lives in `api/model/`. No abstraction tax for a known, bounded set of aggregations.
+**Trade-offs:** Adding a new aggregation dimension later requires a new method + return type rather than fitting into a generic framework. Acceptable given YAGNI.
+**Sources:** Issue #201, AttestationVerdict enum
+**Exploration:** quick
+**Status:** captured
