@@ -13,3 +13,10 @@ flyway-next-v: none
 
 ## Queue
 - [ ] casehubio/ledger#202 — Issue #202 ← active
+  - [ ] Batch 1: Contract
+    - [ ] Task 1: SPI defaults + AttestationSummary
+  - [ ] Batch 2: Impl+Tests
+    - [ ] Task 2: Streaming + cursor in-memory + tests
+    - [ ] Task 3: Aggregate in-memory + qhorus derivation tests
+  - [ ] Batch 3: JPA
+    - [ ] Task 4: NamedQuery + JPA implementations
