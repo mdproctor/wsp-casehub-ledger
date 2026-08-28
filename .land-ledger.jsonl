@@ -1,0 +1,2 @@
+{"event":"promote","branch":"issue-205-guide-review-drift","files":[],"timestamp":"2026-08-28T23:58:04.742423+00:00"}
+{"event":"land","repo":"ledger","branch":"issue-205-guide-review-drift","base_branch":"main","landed_sha":"8600431b1cba6abff392f236f83918f43b34a863","push_target":"upstream","mirrored":true,"stamped":true,"timestamp":"2026-08-28T23:58:32.882183+00:00"}
