@@ -2,7 +2,7 @@
 
 ## State
 branch: issue-203-trust-score-snapshot-gaps
-state: closing:verified
+state: closing:stamped
 project-sha: c593781de47feb11a01575ec9c6cc3bc1d94bdbf
 date: 2026-08-28
 issue-repo: casehubio/ledger
