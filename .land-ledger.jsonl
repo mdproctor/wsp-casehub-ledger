@@ -1,2 +1,0 @@
-{"event":"promote","branch":"issue-203-trust-score-snapshot-gaps","files":[],"timestamp":"2026-08-28T22:17:00.738379+00:00"}
-{"event":"land","repo":"ledger","branch":"issue-203-trust-score-snapshot-gaps","base_branch":"main","landed_sha":"733317276c8ac27973b882af267337aca2639e1d","push_target":"upstream","mirrored":true,"stamped":true,"timestamp":"2026-08-28T22:18:23.938640+00:00"}
