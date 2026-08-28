@@ -13,7 +13,7 @@ flyway-next-v: none
 
 ## Queue
 - [ ] casehubio/ledger#203 — Issue #203 ← active
-  - [ ] Batch 1: Schema+Entity+Repos
-    - [ ] Task 1: Add scoreType and dimensionKey to TrustScoreSnapshot
-  - [ ] Batch 2: Retention+Docs
-    - [ ] Task 2: Snapshot retention config and CLAUDE.md update
+  - [x] Batch 1: Schema+Entity+Repos
+    - [x] Task 1: Add scoreType and dimensionKey to TrustScoreSnapshot
+  - [x] Batch 2: Retention+Docs
+    - [x] Task 2: Snapshot retention config and CLAUDE.md update
