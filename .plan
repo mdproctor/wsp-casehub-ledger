@@ -10,7 +10,14 @@ covers: 207
 design-repo: project
 design-section-hashes: 
 flyway-next-v: unknown
-queue: 
+queue: - [x] casehubio/platform#295 — Issue #295
+- [x] casehubio/ledger#207 — unified API generation — migrate to @McpDomain SPI ← active
+  - [x] Batch 1: API-types
+    - [x] Task 1: Create view records and SPI interfaces
+  - [x] Batch 2: Service-impls
+    - [x] Task 2: Create DefaultXxxApi service beans
+  - [x] Batch 3: APT-wiring
+    - [x] Task 3: Configure APT and delete hand-written endpoints
 
 ## Queue
 - [x] casehubio/platform#295 — Issue #295
