@@ -101,10 +101,23 @@ Several candidates emerged for future conversion: the notification
 endpoints could group under `notifications/`, the compliance resolvers
 under `qhorus/compliance`. But that's separate work.
 
-## What's Next
+## The Semantic Gap
 
-The APT generates correct class names now. REST resources compile. The
-remaining work is mechanical: delete the 23 hand-written files, update
-tests for the new generated paths. One session's work, if the
-`LedgerMerkleFrontier` entity issue from the core extraction doesn't
-block the `@QuarkusTest` integration tests.
+We deleted 26 files and 1,201 lines. The old REST resources, GraphQL
+resolvers, and all their DTOs — gone. The four SPI interfaces and their
+`@DefaultBean` implementations replaced everything.
+
+One thing fell through the cracks: the hand-written `LedgerEntryResource`
+threw `LedgerNotFoundException` when an entry didn't exist — HTTP 404.
+The generated resource wraps every return in `Response.ok()`. When the
+service returns `null`, the client gets 200 with a JSON `null` body.
+The compile succeeds, the tests adapt, but the API contract changed
+silently. In GraphQL, returning `null` for a missing entry is correct.
+In REST, it's wrong. The generated code doesn't know which surface it's
+targeting.
+
+The clean fix is a JAX-RS `ContainerResponseFilter` that converts
+200-with-null to 404 — cross-cutting, lives alongside the exception
+mapper, no service layer contamination. For now, pre-release with no
+consumers, the semantic gap sits in the findings log waiting for its
+issue.
