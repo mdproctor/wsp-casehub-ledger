@@ -1,0 +1,17 @@
+# Work Plan — issue-295-unified-api-generation
+
+## State
+branch: issue-295-unified-api-generation
+state: active
+project-sha: slot-creation
+date: 2026-09-14
+issue-repo: casehubio/ledger
+covers: 207
+design-repo: project
+design-section-hashes: 
+flyway-next-v: unknown
+queue: 
+
+## Queue
+- [x] casehubio/platform#295 — Issue #295
+- [ ] casehubio/ledger#207 — unified API generation — migrate to @McpDomain SPI ← active
