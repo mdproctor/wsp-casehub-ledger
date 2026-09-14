@@ -2,7 +2,7 @@
 
 ## State
 branch: issue-295-unified-api-generation
-state: active
+state: closing:promoted
 project-sha: slot-creation
 date: 2026-09-14
 issue-repo: casehubio/ledger
@@ -11,20 +11,14 @@ design-repo: project
 design-section-hashes: 
 flyway-next-v: unknown
 queue: - [x] casehubio/platform#295 — Issue #295
-- [x] casehubio/ledger#207 — unified API generation — migrate to @McpDomain SPI ← active
-  - [x] Batch 1: API-types
-    - [x] Task 1: Create view records and SPI interfaces
-  - [x] Batch 2: Service-impls
-    - [x] Task 2: Create DefaultXxxApi service beans
-  - [x] Batch 3: APT-wiring
-    - [x] Task 3: Configure APT and delete hand-written endpoints
+- [x] Batch 1: API-types
+- [x] Task 1: Create view records and SPI interfaces
+- [x] Batch 2: Service-impls
+- [x] Task 2: Create DefaultXxxApi service beans
+- [x] Batch 3: APT-wiring
+- [x] Task 3: Configure APT and delete hand-written endpoints
 
+evidence-era: true
 ## Queue
 - [x] casehubio/platform#295 — Issue #295
-- [ ] casehubio/ledger#207 — unified API generation — migrate to @McpDomain SPI ← active
-  - [x] Batch 1: API-types
-    - [x] Task 1: Create view records and SPI interfaces
-  - [x] Batch 2: Service-impls
-    - [x] Task 2: Create DefaultXxxApi service beans
-  - [ ] Batch 3: APT-wiring
-    - [ ] Task 3: Configure APT and delete hand-written endpoints
+- [x] casehubio/ledger#207 — unified API generation — migrate to @McpDomain SPI
