@@ -17,7 +17,7 @@ queue:
 - [ ] casehubio/ledger#207 — unified API generation — migrate to @McpDomain SPI ← active
   - [x] Batch 1: API-types
     - [x] Task 1: Create view records and SPI interfaces
-  - [ ] Batch 2: Service-impls
-    - [ ] Task 2: Create DefaultXxxApi service beans
+  - [x] Batch 2: Service-impls
+    - [x] Task 2: Create DefaultXxxApi service beans
   - [ ] Batch 3: APT-wiring
     - [ ] Task 3: Configure APT and delete hand-written endpoints
