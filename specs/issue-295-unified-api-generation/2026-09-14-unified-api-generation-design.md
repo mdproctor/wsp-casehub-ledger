@@ -54,14 +54,14 @@ Four interfaces matching the current REST resource grouping:
 | `listEntries` | Query | List entries by subject/actor | `UUID subjectId`, `UUID actorId`, `String tenancyId`, `Instant from`, `Instant to` |
 | `getEntry` | Query | Get entry by ID | `@PathParam UUID id`, `String tenancyId` |
 | `getCausedBy` | Query | Causal chain for an entry | `@PathParam UUID id`, `String tenancyId` |
-| `appendEntry` | Mutation | Append a new entry | `AppendEntryRequest request` |
+| `appendEntry` | Mutation | Append a new entry | `AppendEntryRequest request`, `String tenancyId` |
 
 ### LedgerAttestationApi (`ledger/attestations`)
 
 | Method | Type | Description | Parameters |
 |---|---|---|---|
 | `listAttestations` | Query | Attestations for an entry | `@PathParam UUID entryId`, `String tenancyId`, `String capabilityTag` |
-| `createAttestation` | Mutation | Create an attestation | `CreateAttestationRequest request` |
+| `createAttestation` | Mutation | Create an attestation | `CreateAttestationRequest request`, `String tenancyId` |
 
 ### LedgerVerificationApi (`ledger/verification`)
 
@@ -99,8 +99,8 @@ New records in `api/src/main/java/io/casehub/ledger/api/view/`:
 
 | Record | Fields | Used by |
 |---|---|---|
-| `AppendEntryRequest` | subjectId, actorId, actorType, entryType, tenancyId, metadata, domainData | `LedgerEntryApi.appendEntry` |
-| `CreateAttestationRequest` | entryId, attestorId, verdict, confidence, capabilityTag, comment, tenancyId | `LedgerAttestationApi.createAttestation` |
+| `AppendEntryRequest` | subjectId, actorId, actorType, entryType, metadata, domainData | `LedgerEntryApi.appendEntry` |
+| `CreateAttestationRequest` | entryId, attestorId, verdict, confidence, capabilityTag, comment | `LedgerAttestationApi.createAttestation` |
 
 ## Service Implementations
 
@@ -217,10 +217,16 @@ api/  ←────── rest/   (compile: SPI interfaces + view records)
 
 ## Tenancy Handling
 
-All SPI methods take explicit `String tenancyId` as a parameter. The generator
-makes it a `@QueryParam("tenancyId")` in REST and a GraphQL argument. Service
-implementations default it via the existing `LedgerRestUtil.defaultTenancyId()`
-pattern when null.
+All SPI methods take explicit `String tenancyId` as a separate method parameter
+(not inside request records). For queries, the generator makes it a
+`@QueryParam("tenancyId")`. For mutations with a request body, the generator
+treats it as a `@QueryParam` (it's a simple `String`, not the complex body type).
+Both surfaces expose tenancyId consistently as a query parameter.
+
+In GraphQL, tenancyId appears as a method argument on every operation.
+
+Service implementations default it via the existing
+`LedgerRestUtil.defaultTenancyId()` pattern when null.
 
 This matches CLAUDE.md: "tenancyId is an explicit String parameter on every
 tenant-scoped SPI method."
