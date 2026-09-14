@@ -9,3 +9,6 @@ devtown:issue-295-unified-api-generation=stamped
 fsitrading:issue-295-unified-api-generation=stamped
 life:issue-295-unified-api-generation=stamped
 ops:issue-295-unified-api-generation=stamped
+ledger:issue-295-unified-api-generation=stamped
+connectors:issue-295-unified-api-generation=stamped
+workers:issue-295-unified-api-generation=stamped
