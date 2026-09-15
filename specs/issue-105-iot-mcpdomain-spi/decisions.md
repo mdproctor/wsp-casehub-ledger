@@ -91,3 +91,18 @@
 **Sources:** IoTDeviceMcpTool.java (curated MCP surface with 4 tools), issue #105 scope
 **Exploration:** surfaced by reviewer (R1-22)
 **Status:** captured
+
+## D8: REST base path — basePath attribute on @McpDomain
+
+**Choice:** New `basePath` attribute on `@McpDomain` decouples MCP domain name from REST class-level `@Path`. IoT SPIs use `@McpDomain(value = "iot/devices", basePath = "/api/devices")` — MCP namespace is `iot/devices`, REST path is `/api/devices`.
+**Alternatives:**
+- Short domain names (`devices` instead of `iot/devices`) — sacrifices MCP namespace grouping
+- Accept new paths (`/api/iot/devices/...`) and update frontend — clean break but unnecessary churn
+- No change — live with mismatched paths
+**Rationale:** The generator conflated MCP domain name and REST base path (line 752: `@Path("/api/" + domain)`). These serve different purposes — MCP namespace groups tools for LLM agents across domains, REST path is the URL structure for HTTP clients. Decoupling is the right architectural fix. Small change: one attribute on `@McpDomain`, one line in generator, one line in shared scanner.
+**Trade-offs:** None — backward compatible, empty basePath derives from value as before.
+**Implementation:** Done. platform#333, committed to `issue-311-context-param` branch, installed to slot .m2.
+**Cross-repo benefit:** engine#1095 and work#400 can retroactively add basePath to match their original REST paths before merging.
+**Sources:** GraphQLResolverProcessor.java line 752, platform#295 path convention, first-principles concern separation
+**Exploration:** deep-analysis
+**Status:** captured — implemented
