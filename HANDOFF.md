@@ -1,84 +1,58 @@
-# Handover — Slot 194 / casehub-ledger
+# Handover — Slot 194
 
 ## Branch
-`issue-295-unified-api-generation` on `casehubio/ledger`
+`main` — all repos on main, no active feature branch.
 
 ## Active Issue
-`casehubio/ledger#207` — unified API generation: migrate hand-written REST and
-GraphQL endpoints to `@McpDomain` SPI interfaces with JAX-RS annotations.
+`casehubio/engine#1095` — migrate engine REST/GraphQL to @McpDomain SPI.
+Queue position 1/17 (ledger done, engine next).
 
-Parent epic `casehubio/platform#295` is CLOSED (platform-side generator is done).
-This is the ledger-specific child work.
+## Session Summary
+
+Two work items completed:
+
+1. **Ledger #207 closed** — hand-written REST/GraphQL replaced with APT-generated
+   endpoints. 4 squashed commits merged to main, pushed. Full work-end cycle
+   (review, branch audit, forage, squash, land).
+
+2. **Platform #300 completed** — 10 generator improvements: response codes (201),
+   null→404, @PlatformStream (SSE + subscriptions), @Operation from description,
+   @RestName, @RolesAllowed pass-through, @PaginatedResponse, thread dispatch
+   awareness. 51 tests. Merged to main, pushed. Spring session's shared scan
+   model + graphql-spring-generator rewrite rebased in.
+
+## Engine Brainstorming State
+
+Exploration started but not committed to spec. Findings so far:
+- 6 standard REST resources migratable (CaseInstance, CaseControl, CaseDefinition,
+  Plan, EventLog, Signal)
+- 2 SSE resources now migratable with @PlatformStream (CaseStream, ExecutionState)
+- 2 GraphQL query/mutation resolvers migratable
+- 1 GraphQL subscription resolver now migratable with @PlatformStream
+- CaseInstanceResource has inline business logic (goal evaluation, completion
+  computation) — needs extraction to service layer before migration
+- CaseService in rest/service/ is a partial service layer
 
 ## Standing Instructions
 
-1. **Always rebase from origin/main** before starting work each session.
-2. **Check work isn't already done or being done** in other slots before proceeding.
-3. **AML is ongoing** — Slot 181 (`issue-469-dual-framework-core-extraction`) is
-   actively working across many repos including `aml` and related workspaces.
-   Avoid conflicts with that work stream.
+1. Always rebase from origin/main before starting work.
+2. Slot-local `.m2` at `slots/194/.m2` — install platform there, not `~/.m2`.
+3. Generator JARs updated in slot .m2 — platform-api, graphql-generator,
+   generator-common all at latest.
 
-## Critical: Slot-Local Maven Repository
+## Known Issues
 
-This slot uses a **slot-local `.m2`** at `/Users/mdproctor/claude/casehub/slots/194/.m2`.
-Any `mvn install` must target this directory, not `~/.m2/repository`. The slot's
-`.mvn/slot-settings.xml` configures this with a `host-m2` fallback to `~/.m2/repository`.
+- Ledger main has a revert of #207 changes (upstream). The slot's fork has
+  the work landed. This needs reconciliation if ledger re-migration is needed.
+- Platform `persistence-jpa` module broken (Panache removal WIP from Spring
+  session) — skip when building platform full.
 
-When patching platform jars (e.g., `casehub-platform-graphql-generator`), copy the
-patched jar to BOTH locations:
-- `~/.m2/repository/io/casehub/<artifact>/.../` (host fallback)
-- `/Users/mdproctor/claude/casehub/slots/194/.m2/io/casehub/<artifact>/.../` (slot local — this is what Maven actually uses)
+## References
 
-## Ecosystem Context — Other Active Slots on Ledger
-
-| Slot | Branch | Issue | Status |
-|------|--------|-------|--------|
-| 189 | `issue-206-extract-framework-neutral-core` | ledger#206 | scaffolded |
-| 192 | `issue-474-spring-boot-generators` | platform#474 | active |
-| 194 | `issue-295-unified-api-generation` | ledger#207 | active (this slot) |
-
-## Session Progress
-
-### Session 1 (2026-09-14)
-
-**Completed:**
-- Rebased from origin/main — already up to date
-- Confirmed parent epic closed, ledger child #207 is open and unworked
-- Updated .plan to track casehubio/ledger#207
-- Brainstormed design: 6 decisions captured, all constraint-driven
-- Wrote spec: `specs/issue-295-unified-api-generation/2026-09-14-unified-api-generation-design.md`
-- Wrote plan: `plans/2026-09-14-unified-api-generation.md`
-- **Task 1 DONE**: Created 10 view/request records + 4 SPI interfaces in `api/`
-- **Task 2 DONE**: Created 4 `DefaultXxxApi` service beans in `runtime/service/api/` with unit tests
-- **Task 3 IN PROGRESS**: APT wiring
-  - Updated `rest/pom.xml` and `graphql/pom.xml` with APT config and dependency changes
-  - APT generates correct class names (`GeneratedLedgerEntriesResource`, etc.)
-
-**Discovered issues:**
-- **Generator `/` in domain names** — `toPascalCase` didn't handle `/` separator.
-  Fixed with `kebab.replace('/', '-')` in platform's `GraphQLResolverProcessor`.
-  Currently a LOCAL PATCH in `~/.m2` and slot `.m2` — needs a proper platform commit.
-  Protocol PP-20260914-7387db captured for this rule.
-- **Pre-existing `LedgerMerkleFrontier` entity issue** — Hibernate says "no identifier".
-  All `@QuarkusTest` tests in runtime, rest, graphql fail. Not caused by this branch —
-  from the core extraction (commit `983a274`). Service implementation tests use plain
-  JUnit with no-op repos as workaround.
-- **Slot-local `.m2`** — caused hours of debugging. Generator patches installed to
-  `~/.m2/repository` were invisible to the slot's Maven. Must install to slot's `.m2`.
-
-**Audit result:** No repos have accidentally flattened hierarchical `@McpDomain` values.
-All existing repos use flat domains. Ledger is the first to use hierarchical `/` domains.
-Candidates for future hierarchy: notifications (digest, delivery-channels,
-notification-preferences), preferences (preference-schemas), qhorus (compliance),
-engine (cases).
-
-## What's Next
-
-| Item | Scale | Complexity |
-|------|-------|------------|
-| Delete old hand-written REST resources and DTOs from `rest/` | S | Low |
-| Delete old hand-written GraphQL resolvers and DTOs from `graphql/` | S | Low |
-| Update REST tests for new generated paths | S | Med |
-| Update GraphQL tests for generated resolvers | S | Med |
-| File platform issue for generator `/` fix (PP-20260914-7387db) | XS | Low |
-| Investigate LedgerMerkleFrontier @Id issue (pre-existing) | S | Med |
+| Artifact | Path |
+|----------|------|
+| Slot plan | `slots/194/.plan` |
+| Generator spec | `wsp-casehub-ledger/specs/issue-300-generator-improvements/` |
+| Generator plan | `wsp-casehub-ledger/plans/2026-09-15-generator-improvements.md` |
+| Diary entry | `wsp-casehub-ledger/blog/2026-09-14-mdp01-one-spi-three-surfaces.md` |
+| Garden entries | GE-20260914-638e46 (null→200 regression), GE-20260914-714a71 (APT param names) |
