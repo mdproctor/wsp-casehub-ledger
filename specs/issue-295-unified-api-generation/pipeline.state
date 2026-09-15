@@ -1,7 +1,7 @@
 format_version: 1
-state: PLANNING
-entered: 2026-09-14T13:30:00Z
-decision_count: 6
+state: DECISION_CAPTURE
+entered: 2026-09-15T10:30:00Z
+decision_count: 9
 dimensions_completed: 0
 dimensions_total: 0
 ordered: false

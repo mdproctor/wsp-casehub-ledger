@@ -71,3 +71,42 @@
 **Sources:** GE-20260914-3854b8, platform `callback/pom.xml` and `notifications/pom.xml` patterns
 **Exploration:** quick
 **Status:** captured
+
+---
+
+# Engine Migration Decisions (casehubio/engine#1095)
+
+## D7: Engine domain structure — five SPI interfaces by function
+
+**Choice:** Five interfaces: `engine/cases` (list, get, start, context, plan-items, goals), `engine/control` (suspend, resume, cancel, signal), `engine/definitions` (list, get-by-key), `engine/events` (event log), `engine/plan` (model, definitions, decomposition, dag, dag-result, state).
+**Alternatives:**
+- 3 interfaces (cases+control+signal+events, definitions, plan) — 14-method `engine/cases` is too coarse for MCP discovery
+- 8 interfaces (1:1 with REST resources) — single-method interfaces (`engine/signals`, `engine/events`) generate 3 boilerplate classes each for no MCP benefit; signal and control are the same domain action ("act on a running case")
+**Rationale:** Groups by what the caller is thinking about. Signal and control are both case-scoped state mutations — splitting them is a REST path artifact, not a domain boundary. Single-method domains are MCP-wasteful.
+**Trade-offs:** `engine/events` is still single-method but conceptually distinct (audit trail, not case state).
+**Sources:** Ledger D3 pattern, engine REST resource structure, MCP progressive discovery model
+**Exploration:** quick
+**Status:** captured
+
+## D8: SPI implementation location — engine rest/ module
+
+**Choice:** SPI implementation beans live in `rest/service/` alongside the existing `CaseService`.
+**Alternatives:**
+- New `engine-api-impl/` module — clean layering but adds a module for no gain; CaseService already has all deps
+- Engine `runtime/` — conflates REST-shaped service methods with engine core
+**Rationale:** CaseService already injects `CaseHubRuntime`, `CaseInstanceRepository`, `CaseDefinitionRegistry`, `ExpressionEngineRegistry`, `AccessControlProvider`. SPI impls delegate to CaseService + existing engine services. No new modules needed.
+**Trade-offs:** SPI impls live in `rest/`, not a framework-neutral module. Acceptable because the engine `rest/` module is already the API surface layer.
+**Sources:** Engine CaseService, ledger D5 pattern
+**Exploration:** quick
+**Status:** captured
+
+## D9: Streaming endpoints — all migrated to @PlatformStream
+
+**Choice:** All 4 streaming endpoints (2 SSE REST + 2 GraphQL subscriptions) migrate to `@PlatformStream` on SPI interfaces. Generator produces SSE + @Subscription from the same method.
+**Alternatives:**
+- Keep hand-written — contradicts the strategic goal of unified generation after investing in @PlatformStream support (platform #300)
+**Rationale:** The generator was specifically enhanced with @PlatformStream for this use case. The SPI method delegates to the broadcaster (`broadcaster.stream(caseId) → Multi<T>`), which is the same thin-delegation pattern as every other SPI method. If the generator needs improvements for edge cases, fix the generator.
+**Trade-offs:** None significant — broadcaster infrastructure stays, only the resource/resolver class is replaced.
+**Sources:** Platform #300 (@PlatformStream support), GE-20260804-8b0fd6 (BroadcastProcessor pattern)
+**Exploration:** quick
+**Status:** captured
