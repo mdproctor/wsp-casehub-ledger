@@ -28,14 +28,14 @@ public interface EngineCaseApi {
     @PlatformQuery("List case instances with optional filtering")
     @PaginatedResponse
     CasePage listCases(CaseStatus status, String namespace, String name,
-                       Integer offset, Integer limit);
+                       String tenancyId, Integer offset, Integer limit);
 
     @PlatformQuery("Get a case instance by ID")
-    CaseInstanceView getCaseById(@PathParam UUID caseId);
+    CaseInstanceView getCaseById(@PathParam UUID caseId, String tenancyId);
 
     @PlatformMutation("Start a new case instance")
     @RestStatus(201)
-    CaseInstanceView startCase(StartCaseRequest request);
+    CaseInstanceView startCase(StartCaseRequest request, String tenancyId);
 
     @PlatformStream("Live case event stream")
     Multi<CaseStreamEventView> caseStream(@PathParam UUID caseId);
@@ -50,13 +50,13 @@ Five interfaces organised by caller intent:
 
 | Method | Type | Description | Parameters |
 |---|---|---|---|
-| `listCases` | Query | List instances with filtering/pagination | `CaseStatus status`, `String namespace`, `String name`, `Integer offset`, `Integer limit` |
-| `getCaseById` | Query | Get instance by ID | `@PathParam UUID caseId` |
-| `startCase` | Mutation | Start a new case | `StartCaseRequest request` |
-| `getCaseContext` | Query | Full case context | `@PathParam UUID caseId` |
-| `getCaseContextPath` | Query | Context at a specific path | `@PathParam UUID caseId`, `String path` |
-| `getPlanItems` | Query | Plan items for a case | `@PathParam UUID caseId` |
-| `getGoals` | Query | Evaluate goals against live context | `@PathParam UUID caseId` |
+| `listCases` | Query | List instances with filtering/pagination | `CaseStatus status`, `String namespace`, `String name`, `String tenancyId`, `Integer offset`, `Integer limit` |
+| `getCaseById` | Query | Get instance by ID | `@PathParam UUID caseId`, `String tenancyId` |
+| `startCase` | Mutation | Start a new case | `StartCaseRequest request`, `String tenancyId` |
+| `getCaseContext` | Query | Full case context (returns Map) | `@PathParam UUID caseId`, `String tenancyId` |
+| `getCaseContextPath` | Query | Context at a specific path (returns Map) | `@PathParam UUID caseId`, `String path`, `String tenancyId` |
+| `getPlanItems` | Query | Plan items for a case | `@PathParam UUID caseId`, `String tenancyId` |
+| `getGoals` | Query | Evaluate goals against live context | `@PathParam UUID caseId`, `String tenancyId` |
 | `caseStream` | Stream | SSE stream of case events | `@PathParam UUID caseId` |
 | `caseLifecycle` | Stream | Live lifecycle events | `@PathParam UUID caseId` |
 | `caseContextChange` | Stream | Live context change events | `@PathParam UUID caseId` |
@@ -65,35 +65,35 @@ Five interfaces organised by caller intent:
 
 | Method | Type | Description | Parameters |
 |---|---|---|---|
-| `suspendCase` | Mutation | Suspend a running case | `@PathParam UUID caseId`, `CaseControlRequest request` |
-| `resumeCase` | Mutation | Resume a suspended case | `@PathParam UUID caseId`, `CaseControlRequest request` |
-| `cancelCase` | Mutation | Cancel a case | `@PathParam UUID caseId`, `CaseControlRequest request` |
-| `sendSignal` | Mutation | Send a signal to a case | `@PathParam UUID caseId`, `SendSignalRequest request` |
+| `suspendCase` | Mutation | Suspend a running case | `@PathParam UUID caseId`, `CaseControlRequest request`, `String tenancyId` |
+| `resumeCase` | Mutation | Resume a suspended case | `@PathParam UUID caseId`, `CaseControlRequest request`, `String tenancyId` |
+| `cancelCase` | Mutation | Cancel a case | `@PathParam UUID caseId`, `CaseControlRequest request`, `String tenancyId` |
+| `sendSignal` | Mutation | Send a signal to a case | `@PathParam UUID caseId`, `SendSignalRequest request`, `String tenancyId` |
 
 ### EngineCaseDefinitionApi (`engine/definitions`) — 3 methods
 
 | Method | Type | Description | Parameters |
 |---|---|---|---|
-| `listDefinitions` | Query | List registered definitions | `Integer offset`, `Integer limit` |
-| `getDefinitionsByName` | Query | Definitions by namespace/name | `@PathParam String namespace`, `@PathParam String name` |
-| `getDefinitionByKey` | Query | Specific definition by key | `@PathParam String namespace`, `@PathParam String name`, `@PathParam String version` |
+| `listDefinitions` | Query | List registered definitions | `String tenancyId`, `Integer offset`, `Integer limit` |
+| `getDefinitionsByName` | Query | Definitions by namespace/name | `@PathParam String namespace`, `@PathParam String name`, `String tenancyId` |
+| `getDefinitionByKey` | Query | Specific definition by key | `@PathParam String namespace`, `@PathParam String name`, `@PathParam String version`, `String tenancyId` |
 
 ### EngineEventLogApi (`engine/events`) — 1 method
 
 | Method | Type | Description | Parameters |
 |---|---|---|---|
-| `getEventLog` | Query | Paginated/filtered event log | `@PathParam UUID caseId`, `Integer offset`, `Integer limit`, `List<String> eventTypes`, `List<String> streamTypes` |
+| `getEventLog` | Query | Paginated/filtered event log | `@PathParam UUID caseId`, `String tenancyId`, `Integer offset`, `Integer limit`, `List<String> eventTypes`, `List<String> streamTypes` |
 
 ### EnginePlanApi (`engine/plan`) — 7 methods
 
 | Method | Type | Description | Parameters |
 |---|---|---|---|
-| `getPlanModel` | Query | Live case plan model snapshot | `@PathParam UUID caseId` |
-| `getPlanDefinitions` | Query | Plan item definition hierarchy | `@PathParam UUID caseId` |
-| `getDecomposition` | Query | HTN decomposition tree | `@PathParam UUID caseId` |
-| `getDagPlan` | Query | DAG plan snapshot | `@PathParam UUID caseId` |
-| `getDagResult` | Query | DAG execution result | `@PathParam UUID caseId` |
-| `getExecutionState` | Query | Composed execution state | `@PathParam UUID caseId` |
+| `getPlanModel` | Query | Live case plan model snapshot | `@PathParam UUID caseId`, `String tenancyId` |
+| `getPlanDefinitions` | Query | Plan item definition hierarchy | `@PathParam UUID caseId`, `String tenancyId` |
+| `getDecomposition` | Query | HTN decomposition tree | `@PathParam UUID caseId`, `String tenancyId` |
+| `getDagPlan` | Query | DAG plan snapshot | `@PathParam UUID caseId`, `String tenancyId` |
+| `getDagResult` | Query | DAG execution result | `@PathParam UUID caseId`, `String tenancyId` |
+| `getExecutionState` | Query | Composed execution state | `@PathParam UUID caseId`, `String tenancyId` |
 | `executionStateStream` | Stream | SSE stream of execution state | `@PathParam UUID caseId` |
 
 ## Pre-Migration Cleanup
@@ -108,9 +108,11 @@ conditions via `ExpressionEngineRegistry`, collects reached goals, builds
 `CompletionSummary` with pattern matching on `GoalBasedCompletion`/
 `PredicateBasedCompletion`.
 
-**Extract to:** `CaseService.evaluateGoals(UUID caseId)` → `GoalEvaluationView`.
-CaseService already injects `CaseDefinitionRegistry`, `ExpressionEngineRegistry`,
-`CaseHubRuntime`. The private `buildCompletionSummary()` method moves with it.
+**Extract to:** `CaseService.evaluateGoals(UUID caseId, String tenancyId)` →
+`GoalEvaluationView`. CaseService already injects `CaseDefinitionRegistry` and
+`CaseHubRuntime`; `ExpressionEngineRegistry` must be added as a new injection
+(currently injected by `CaseInstanceResource` directly). The private
+`buildCompletionSummary()` method moves with it.
 
 ### 2. Execution state composition (PlanResource.getExecutionState)
 
@@ -118,9 +120,10 @@ Reads from 3 snapshot sources (`CasePlanModelSnapshotProvider`,
 `ExecutionSnapshotStore.getDagPlan/getDagResult`), resolves definition, calls
 `ExecutionStateSnapshot.compose()`.
 
-**Extract to:** `ExecutionStateBroadcaster.composeInitial(UUID caseId)` already
-has this logic. Consolidate — the SPI impl calls
-`executionStateBroadcaster.composeInitial(caseId)` for the REST polling endpoint.
+**Extract to:** `ExecutionStateBroadcaster.composeInitial(UUID caseId, String tenancyId)`
+already has this logic. Consolidate — the SPI impl calls
+`executionStateBroadcaster.composeInitial(caseId, tenancyId)` for the REST polling
+endpoint.
 
 ### 3. ACL filtering
 
@@ -129,9 +132,20 @@ post-query filtering via `AccessControlProvider.canAccess()`. This is cross-cutt
 and can stay in the SPI implementation — the impl calls `caseService.requireCaseAccess()`
 or filters via `AccessControlProvider` after the query, same as today.
 
+## Tenancy Handling
+
+All tenant-scoped SPI methods take explicit `String tenancyId` as a parameter
+(matching ledger convention — CLAUDE.md: "tenancyId is an explicit String
+parameter on every tenant-scoped SPI method"). Stream methods are the exception
+— they filter by caseId only (the broadcaster handles tenant context internally).
+
+The current REST layer resolves tenancyId from `CurrentPrincipal`. SPI
+implementations continue this pattern — when `tenancyId` is null, the impl
+defaults via `currentPrincipal.tenancyId()`.
+
 ## Return Types
 
-New view records in `engine-api` module (`io.casehub.engine.api.view`):
+New view records in `engine-api` module (`io.casehub.api.view`):
 
 | Record | Fields | Replaces |
 |---|---|---|
@@ -150,6 +164,10 @@ New view records in `engine-api` module (`io.casehub.engine.api.view`):
 | `CaseStreamEventView` | caseId, type, data | `CaseStreamEvent` (REST) |
 | `CaseLifecycleEventView` | caseId, eventType, commandType, ... | `CaseLifecycleEventType` (GraphQL) |
 | `CaseContextChangeEventView` | caseId, changedLayer, contextSnapshot | `CaseContextChangeEventType` (GraphQL) |
+
+`getCaseContext` and `getCaseContextPath` return `Map<String,Object>` — the raw
+context data from `CaseHubRuntime.query()`. No wrapper record needed; the
+generator serialises Map directly as JSON.
 
 ### Request Types
 
@@ -179,13 +197,17 @@ Each bean:
 
 ## SPI Interface Location
 
-SPI interfaces and view records live in the engine `api/` module
-(`io.casehub.engine.api`). This follows ledger D4 — `api/` is the public
-contract module, no JPA deps, no framework deps.
+SPI interfaces and view records live in the engine `api/` module under
+`io.casehub.api.view` (matching the existing root package `io.casehub.api`).
+SPI interfaces go in `io.casehub.api.spi` (matching existing `spi/` directory).
 
-Note: the engine `api/` module is `casehub-engine-api`. It already has Jandex
-indexing configured. The APT in `rest/` and `graphql/` will see the SPI
-interfaces from the `api/` JAR's Jandex index (per GE-20260914-f53be7).
+The `api/` module already has Jandex indexing configured. The APT in `rest/`
+and `graphql/` will see the SPI interfaces from the `api/` JAR's Jandex index
+(per GE-20260914-f53be7).
+
+**Build requirement:** The `api/` module's `maven-compiler-plugin` must have
+`<parameters>true</parameters>` so APT-generated code uses real parameter
+names instead of `arg0`/`arg1` (per GE-20260914-714a71).
 
 ## APT Configuration
 
@@ -245,6 +267,7 @@ Same `annotationProcessorPaths`, with:
 - `dto/GoalEvaluationResponse.java` → `api/view/GoalEvaluationView`
 - `dto/GoalStatusResponse.java` → `api/view/GoalStatusView`
 - `dto/CompletionSummary.java` → `api/view/CompletionSummaryView`
+- `dto/CompletionStatus.java` → folded into `CompletionSummaryView`
 - `dto/CaseStreamEvent.java` → `api/view/CaseStreamEventView`
 - `dto/StartCaseRequest.java` → `api/view/StartCaseRequest`
 - `dto/CaseControlRequest.java` → `api/view/CaseControlRequest`
