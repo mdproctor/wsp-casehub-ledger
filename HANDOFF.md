@@ -1,7 +1,7 @@
 # Handover — Slot 194
 
 ## Branch
-Engine repo: `issue-1095-engine-mcpdomain-spi` (feature branch, 2 commits ahead of main).
+Engine repo: `issue-1095-engine-mcpdomain-spi` (feature branch, 5 commits ahead of main).
 Ledger repo: `main`.
 
 ## Active Issue
@@ -10,64 +10,71 @@ Queue position 1/17 (ledger done, engine active).
 
 ## Session Summary
 
-Completed brainstorming, spec, plan, and Batch 1 execution for engine #1095:
+Completed Batch 2 execution (Tasks 3-4) for engine #1095:
 
-1. **Brainstorming** — full codebase scan (8 REST resources, 3 GraphQL resolvers,
-   24 endpoints, 13 methods). 3 engine-specific decisions captured (D7-D9):
-   5 SPI interfaces by function, impls in rest/, all streaming via @PlatformStream.
+1. **Task 3: Extract goal evaluation** — moved ~75 lines of inline goal
+   evaluation logic from `CaseInstanceResource.getGoals()` to
+   `CaseService.evaluateGoals(UUID, String)`. Includes `buildCompletionSummary()`
+   private helper. `ExpressionEngineRegistry` injection added to CaseService.
+   CaseInstanceResource now delegates with a single line.
 
-2. **Design spec written** — `2026-09-15-engine-api-generation-design.md`. Self-review
-   caught 6 issues (wrong package, missing tenancyId, CaseService injection claim,
-   -parameters flag, return types, missing DTO). All fixed.
+2. **Task 4: Create 5 SPI implementation beans** — all in
+   `io.casehub.engine.rest.service`:
+   - `DefaultEngineCaseApi` (10 methods): CRUD, context, goals, plan items, 3 streams
+   - `DefaultEngineCaseControlApi` (4 methods): suspend, resume, cancel, signal
+   - `DefaultEngineCaseDefinitionApi` (3 methods): list, by-name, by-key
+   - `DefaultEngineEventLogApi` (1 method): paginated+filtered event log
+   - `DefaultEnginePlanApi` (7 methods): plan model, definitions, decomposition,
+     DAG, execution state, execution state stream
 
-3. **Implementation plan written** — `2026-09-15-engine-api-generation.md`. 3 batches,
-   6 tasks.
-
-4. **Batch 1 executed** — Foundation:
-   - 18 view records + 3 request types in `io.casehub.api.view` (api/ module)
-   - 5 SPI interfaces in `io.casehub.api.spi` with @McpDomain annotations
-   - 1426 api/ module tests passing (16 new)
+   Each bean delegates to existing services and maps to `api/view/` records.
+   All compile clean via IntelliJ diagnostics.
 
 ## Resume Point
 
-**Batch 2, Task 3: Extract goal evaluation to CaseService.**
+**Batch 3, Task 5: Wire APT generator in rest/ and graphql/ modules.**
 
 Remaining tasks:
-- Task 3: Extract CaseInstanceResource.getGoals() inline logic → CaseService.evaluateGoals()
-- Task 4: Create 5 SPI implementation beans in rest/service/
-- Task 5: Wire APT generator in rest/ and graphql/ pom.xml
-- Task 6: Delete hand-written endpoints, update tests
+- Task 5: Add `casehub-platform-graphql-generator` as annotation processor in
+  rest/pom.xml and graphql/pom.xml with domain filtering
+- Task 6: Delete hand-written REST resources, GraphQL resolvers, and old DTOs;
+  update tests to hit generated endpoint paths
 
-## Key Discovery During Execution
+## Key Discoveries During Execution
 
-**EnginePlanApi return types:** api/ module can't reference types from common-core/
-(dependency goes common-core → api/, not reverse). Methods `getPlanModel`,
-`getDagResult`, `getExecutionState`, and `executionStateStream` return `Object`
-instead of concrete snapshot types. Jackson serializes correctly; GraphQL maps
-to JSON scalar. Type safety enforced in the impl, not the SPI interface.
+**CaseMetaModelRepository uses CaseDefinitionQuery, not CaseInstanceQuery.**
+The definition API's query method takes `CaseDefinitionQuery` (in
+`io.casehub.engine.common.spi.query`) which has namespace/name/page/size — not
+`CaseInstanceQuery` which also has status filtering.
 
-**platform-api needed rebuild:** Slot .m2 had stale platform-api without
-@PaginatedResponse, @PlatformStream, @RestStatus. Rebuilt from slot's platform
-source and installed to slot .m2.
+**Capability is a record** — `io.casehub.worker.api.Capability` is a Java record,
+so accessor is `name()` not `getName()`.
+
+**GoalEvaluationResponse → GoalEvaluationView mapping is lossy.** The existing DTO
+has a rich `CompletionSummary` with per-kind `byKind` map. The new
+`CompletionSummaryView` is simpler (complete/satisfied/total/kind). The SPI impl
+maps by counting satisfied kinds for goal-based, or using the boolean for
+predicate-based completion.
+
+**Lifecycle and contextChange streams not wired.** `DefaultEngineCaseApi` returns
+`Multi.empty()` for `caseLifecycle` and `caseContextChange` streams — no
+broadcasters exist for these in rest/. The graphql module's `CaseEventPublisher`
+handles these via CDI events. Wiring can happen in Task 6 when the generated
+endpoints replace hand-written ones.
+
+**Rest module QuarkusTest runtime broken** (pre-existing). Ledger JPA entities on
+the classpath require a datasource not configured in the engine rest test profile.
+The `CaseInstanceGoalsResourceTest` can't run via `mvn test -pl rest`. IntelliJ
+diagnostics confirm compilation is clean. This needs a test config fix (add
+`quarkus.hibernate-orm.packages` exclusion or a datasource) before Task 6.
 
 ## Standing Instructions
 
 1. Always rebase from origin/main before starting work.
 2. Slot-local `.m2` at `slots/194/.m2` — install platform there, not `~/.m2`.
-3. Generator JARs updated in slot .m2 — platform-api rebuilt this session.
-4. IntelliJ indexes the main engine repo (`~/claude/casehub/engine`), not the
-   slot clone. Use Write tool for slot files, not ide_create_file.
-
-## Known Issues
-
-- Ledger main has a revert of #207 changes (upstream). The slot's fork has
-  the work landed. This needs reconciliation if ledger re-migration is needed.
-- Platform `persistence-jpa` module broken (Panache removal WIP from Spring
-  session) — skip when building platform full.
-- Files created via ide_create_file in prior attempts exist in the main engine
-  repo at `~/claude/casehub/engine/api/src/main/java/io/casehub/api/view/` and
-  `~/claude/casehub/engine/api/src/main/java/io/casehub/api/spi/` — these are
-  duplicates of the slot files. Clean up when convenient.
+3. Generator JARs updated in slot .m2 — platform-api rebuilt prior session.
+4. IntelliJ now has the slot engine project open — use `project_path=/Users/mdproctor/claude/casehub/slots/194/engine`.
+5. Pre-existing build errors in `schema/` module (Worker/Agent class) — unrelated to SPI migration.
 
 ## References
 
