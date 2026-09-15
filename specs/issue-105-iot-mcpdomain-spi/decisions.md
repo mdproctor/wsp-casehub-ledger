@@ -13,7 +13,7 @@
 ## D2: Domain groupings — 5 SPI interfaces
 
 **Choice:** 5 interfaces organized by caller intent:
-1. `IoTDeviceApi` (`iot/devices`) — 5 methods (list, get, command, history, stream)
+1. `IoTDeviceApi` (`iot/devices`) — 4 methods (list, get, command, history)
 2. `IoTSituationApi` (`iot/situations`) — 7 methods (definitions CRUD, active, suggestions, dismissal)
 3. `IoTSuppressionApi` (`iot/situations/suppressions`) — 3 methods (suppression history, override, stats)
 4. `IoTCaseApi` (`iot/cases`) — 6 methods (cases + resolution queue merged)
@@ -25,7 +25,7 @@
 **Trade-offs:** 5 interfaces instead of 4 adds one more SPI. The suppression sub-domain is small (3 methods) but cohesive.
 **Sources:** SituationResource.java (10 methods spanning 4 concerns), ResolutionQueueResource.java (shares 4 services with CaseResource)
 **Exploration:** quick
-**Status:** revised — split IoTSuppressionApi from IoTSituationApi per R1-06 sub-concern analysis.
+**Status:** revised — split IoTSuppressionApi from IoTSituationApi per R1-06; removed "stream" from IoTDeviceApi per R2-02 (D4 keeps SSE hand-written).
 
 ## D3: View record strategy for existing webapp-api DTOs
 
