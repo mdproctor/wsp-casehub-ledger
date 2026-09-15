@@ -2,7 +2,7 @@
 
 **Issue:** casehubio/work#400
 **Parent epic:** casehubio/platform#295 (CLOSED — platform generator done)
-**Depends on:** casehubio/engine#1095 (DONE — engine migration, pattern established)
+**Depends on:** casehubio/engine#1095 (DONE — engine migration, pattern established), casehubio/platform#311 (DONE — @ContextParam annotation)
 **Date:** 2026-09-15
 **Scope:** Core-first — WorkItemResource (36 endpoints) + WorkItemRelationResource (4 endpoints)
 
@@ -26,8 +26,10 @@ WorkItemSpawnResource (3), WorkItemInstancesResource (1).
 
 ## Annotation Model
 
-Same as engine migration (D1 from engine spec). All SPI interfaces use
-platform annotations from `io.casehub.platform.api.mcp`:
+All SPI interfaces use platform annotations from `io.casehub.platform.api.mcp`.
+Tenant-scoped parameters use `@ContextParam("tenancyId")` — the generator
+resolves these from `CurrentPrincipal` server-side instead of exposing them
+as REST query parameters or GraphQL arguments (platform#311).
 
 ```java
 @McpDomain("work/items")
@@ -37,14 +39,17 @@ public interface WorkItemApi {
     @PaginatedResponse
     WorkItemPage listAll(WorkItemStatus status, WorkItemPriority priority,
                          String label, String outcome,
-                         String tenancyId, Integer offset, Integer limit);
+                         @ContextParam("tenancyId") String tenancyId,
+                         Integer offset, Integer limit);
 
     @PlatformQuery("Get a work item by ID")
-    WorkItemView getById(@PathParam UUID workItemId, String tenancyId);
+    WorkItemView getById(@PathParam UUID workItemId,
+                         @ContextParam("tenancyId") String tenancyId);
 
     @PlatformMutation("Create a new work item")
     @RestStatus(201)
-    WorkItemView create(WorkItemCreateRequest request, String tenancyId);
+    WorkItemView create(WorkItemCreateRequest request,
+                        @ContextParam("tenancyId") String tenancyId);
 }
 ```
 
