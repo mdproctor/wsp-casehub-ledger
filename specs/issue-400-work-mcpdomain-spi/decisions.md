@@ -26,3 +26,15 @@
 **Sources:** WorkItemResource.java (823 lines), DefaultEngineCaseApi.java pattern
 **Exploration:** quick
 **Status:** captured
+
+## D3: View records strategy
+
+**Choice:** New view records for response types; reuse api types for requests, enums, and summaries
+**Alternatives:**
+- Reuse all api records directly — leaks 20 internal fields (tenancyId, escalation config, operational metrics, provenance internals) into REST/GraphQL responses
+- Create views for absolutely everything — unnecessary for request types and enums that don't have a curation gap
+**Rationale:** WorkItem (57 fields) vs WorkItemResponse (37 fields) shows deliberate curation — 20 fields excluded, 3 reshaped. Exposing WorkItem directly would be a security and API design regression. But request types (WorkItemCreateRequest), enums (WorkItemStatus, WorkItemPriority), and summaries (WorkItemSummary) are already safe shapes.
+**Trade-offs:** More mapping code than pure reuse, but less than engine (which created ALL new types). Estimated ~10-12 new records.
+**Sources:** WorkItem.java (57 fields), WorkItemResponse.java (37 fields), WorkItemWithAuditResponse.java (38 fields)
+**Exploration:** deep-analysis
+**Status:** captured
