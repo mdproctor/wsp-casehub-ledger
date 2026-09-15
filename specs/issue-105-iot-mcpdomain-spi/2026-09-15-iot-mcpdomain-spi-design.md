@@ -14,7 +14,7 @@ SPIs. Same pattern as ledger#207, engine#1095, work#400.
 ## Scope
 
 **In scope:**
-- 5 SPI interfaces (28 methods) covering devices, situations, suppressions,
+- 5 SPI interfaces (27 methods) covering devices, situations, suppressions,
   cases/resolution queue, and operations
 - View records evolved from existing webapp-api DTOs
 - Impl beans in `webapp/` delegating to existing services
