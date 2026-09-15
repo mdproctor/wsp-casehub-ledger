@@ -1,88 +1,93 @@
 # Handover — Slot 194
 
 ## Branch
-Engine repo: `issue-1095-engine-mcpdomain-spi` (feature branch, 5 commits ahead of main).
+Engine repo: `issue-1095-engine-mcpdomain-spi` (pushed, 6 commits ahead of main).
+Work repo: `main` (no feature branch yet — plan written, execution not started).
 Ledger repo: `main`.
+Platform repo: `issue-311-context-param` (2 commits, landed on local original main).
 
 ## Active Issue
-`casehubio/engine#1095` — migrate engine REST/GraphQL to @McpDomain SPI.
-Queue position 1/17 (ledger done, engine active).
+`casehubio/work#400` — migrate work to @McpDomain SPI.
+Queue position 3/17 (ledger done, engine done, work active).
 
 ## Session Summary
 
-Completed Batch 2 execution (Tasks 3-4) for engine #1095:
+### Engine #1095 — Completed
+Completed Batch 3 (Tasks 5-6):
+1. **Task 5: Wire APT generator** — added `annotationProcessorPaths` + domain filtering
+   to rest/pom.xml and graphql/pom.xml. 5 REST resources and 5 GraphQL resolvers generated.
+2. **Task 6: Delete hand-written endpoints** — deleted 8 REST resources, 14 REST DTOs,
+   3 GraphQL resolvers, 13 GraphQL DTOs, 9 test files. Updated CaseService.evaluateGoals()
+   to return new view records directly. Updated CaseStreamBroadcaster to emit
+   CaseStreamEventView. 54 files changed, +217/-3654 lines. All tests pass.
 
-1. **Task 3: Extract goal evaluation** — moved ~75 lines of inline goal
-   evaluation logic from `CaseInstanceResource.getGoals()` to
-   `CaseService.evaluateGoals(UUID, String)`. Includes `buildCompletionSummary()`
-   private helper. `ExpressionEngineRegistry` injection added to CaseService.
-   CaseInstanceResource now delegates with a single line.
+Branch pushed to origin. PR not yet created.
 
-2. **Task 4: Create 5 SPI implementation beans** — all in
-   `io.casehub.engine.rest.service`:
-   - `DefaultEngineCaseApi` (10 methods): CRUD, context, goals, plan items, 3 streams
-   - `DefaultEngineCaseControlApi` (4 methods): suspend, resume, cancel, signal
-   - `DefaultEngineCaseDefinitionApi` (3 methods): list, by-name, by-key
-   - `DefaultEngineEventLogApi` (1 method): paginated+filtered event log
-   - `DefaultEnginePlanApi` (7 methods): plan model, definitions, decomposition,
-     DAG, execution state, execution state stream
+### Platform #311 — @ContextParam Annotation (NEW)
+Created `@ContextParam` annotation for server-side parameter resolution. Parameters
+annotated with `@ContextParam("tenancyId")` are skipped in generated REST/GraphQL
+signatures — the generator injects `CurrentPrincipal` and resolves the value.
 
-   Each bean delegates to existing services and maps to `api/view/` records.
-   All compile clean via IntelliJ diagnostics.
+Changes across 4 modules:
+- `platform-api`: new `ContextParam.java` annotation
+- `generator-common`: `ResolvedParam` + `McpDomainJandexScanner` updated
+- `graphql-generator`: REST + GraphQL code generation skips context params
+- `graphql-spring-generator`: Spring controller + REST controller writers updated
+
+65 tests pass. Landed on local original platform main. NOT yet on GitHub origin/main.
+Spring session told to pick it up from `issue-311-context-param` branch.
+
+### Work #400 — Design + Plan Complete
+Brainstorming completed with 3 decisions:
+- D1: 5 SPI interfaces (work/items, work/lifecycle, work/notes, work/links, work/relations)
+- D2: SPI impl beans delegate to WorkItemOperations (existing service layer)
+- D3: New view records needed — WorkItem(57 fields) curated to WorkItemView(37 fields)
+
+Design spec: `wsp-casehub-ledger/specs/issue-400-work-mcpdomain-spi/2026-09-15-work-api-generation-design.md`
+Implementation plan: `wsp-casehub-ledger/plans/2026-09-15-work-api-generation.md`
+3 batches, 5 tasks. Light reviews ran for decisions and spec.
 
 ## Resume Point
 
-**Batch 3, Task 5: Wire APT generator in rest/ and graphql/ modules.**
+**Execute the work#400 plan starting at Batch 1, Task 1.**
 
-Remaining tasks:
-- Task 5: Add `casehub-platform-graphql-generator` as annotation processor in
-  rest/pom.xml and graphql/pom.xml with domain filtering
-- Task 6: Delete hand-written REST resources, GraphQL resolvers, and old DTOs;
-  update tests to hit generated endpoint paths
+Prerequisites before starting:
+1. Create feature branch in work repo: `git -C /path/to/work checkout -b issue-400-work-mcpdomain-spi`
+2. Ensure updated platform JARs (with @ContextParam) are in slot .m2
+3. Open the slot work project in IntelliJ: `ide_open_project` with `/Users/mdproctor/claude/casehub/slots/194/work`
 
-## Key Discoveries During Execution
+## Key Discoveries
 
-**CaseMetaModelRepository uses CaseDefinitionQuery, not CaseInstanceQuery.**
-The definition API's query method takes `CaseDefinitionQuery` (in
-`io.casehub.engine.common.spi.query`) which has namespace/name/page/size — not
-`CaseInstanceQuery` which also has status filtering.
+**WorkItem field curation is deliberate.** WorkItem(57 fields) vs WorkItemResponse(37 fields)
+— 20 internal fields excluded, 3 reshaped. This drove the D3 decision to create new view
+records rather than reuse api types.
 
-**Capability is a record** — `io.casehub.worker.api.Capability` is a Java record,
-so accessor is `name()` not `getName()`.
+**WorkItemOperations IS the existing service layer.** 31-method interface in api/spi. The
+decision review caught the incorrect claim that "work has no service layer." SPI impl beans
+delegate to WorkItemOperations for lifecycle methods, inject stores directly for notes/links/relations.
 
-**GoalEvaluationResponse → GoalEvaluationView mapping is lossy.** The existing DTO
-has a rich `CompletionSummary` with per-kind `byKind` map. The new
-`CompletionSummaryView` is simpler (complete/satisfied/total/kind). The SPI impl
-maps by counting satisfied kinds for goal-based, or using the boolean for
-predicate-based completion.
+**@ContextParam resolves tenancyId from authentication context.** End-user apps never see
+tenancyId in REST query params or GraphQL arguments. Internal Java callers still pass it
+explicitly via the SPI interface. Built-in keys: tenancyId, actorId.
 
-**Lifecycle and contextChange streams not wired.** `DefaultEngineCaseApi` returns
-`Multi.empty()` for `caseLifecycle` and `caseContextChange` streams — no
-broadcasters exist for these in rest/. The graphql module's `CaseEventPublisher`
-handles these via CDI events. Wiring can happen in Task 6 when the generated
-endpoints replace hand-written ones.
-
-**Rest module QuarkusTest runtime broken** (pre-existing). Ledger JPA entities on
-the classpath require a datasource not configured in the engine rest test profile.
-The `CaseInstanceGoalsResourceTest` can't run via `mvn test -pl rest`. IntelliJ
-diagnostics confirm compilation is clean. This needs a test config fix (add
-`quarkus.hibernate-orm.packages` exclusion or a datasource) before Task 6.
+**Spring migration feedback aligned with our approach.** The Spring session's briefing about
+Pattern 1 vs Pattern 2 confirmed our SPI interface approach IS Pattern 2. No conflict.
 
 ## Standing Instructions
 
 1. Always rebase from origin/main before starting work.
 2. Slot-local `.m2` at `slots/194/.m2` — install platform there, not `~/.m2`.
-3. Generator JARs updated in slot .m2 — platform-api rebuilt prior session.
-4. IntelliJ now has the slot engine project open — use `project_path=/Users/mdproctor/claude/casehub/slots/194/engine`.
-5. Pre-existing build errors in `schema/` module (Worker/Agent class) — unrelated to SPI migration.
+3. Platform JARs updated with @ContextParam — installed to both `~/.m2` and slot.
+4. IntelliJ needs the slot work project opened for plan execution.
 
 ## References
 
 | Artifact | Path |
 |----------|------|
 | Slot plan | `slots/194/.plan` |
+| Work spec | `wsp-casehub-ledger/specs/issue-400-work-mcpdomain-spi/2026-09-15-work-api-generation-design.md` |
+| Work plan | `wsp-casehub-ledger/plans/2026-09-15-work-api-generation.md` |
 | Engine spec | `wsp-casehub-ledger/specs/issue-295-unified-api-generation/2026-09-15-engine-api-generation-design.md` |
-| Engine plan | `wsp-casehub-ledger/plans/2026-09-15-engine-api-generation.md` |
-| Ledger spec (reference) | `wsp-casehub-ledger/specs/issue-295-unified-api-generation/2026-09-14-unified-api-generation-design.md` |
-| Decisions | `wsp-casehub-ledger/specs/issue-295-unified-api-generation/decisions.md` (D1-D9) |
-| Garden entries | GE-20260914-638e46 (null→200), GE-20260914-3854b8 (domain filter), GE-20260914-f53be7 (Jandex APT), GE-20260914-714a71 (param names), GE-20260804-8b0fd6 (BroadcastProcessor), GE-20260818-c2f072 (MCP dispatch test) |
+| Decisions | `wsp-casehub-ledger/specs/issue-400-work-mcpdomain-spi/decisions.md` (D1-D3) |
+| Decision review | `~/reviews/casehub-slots/issue-400-work-mcpdomain-decision-20260915-134058/` |
+| Spec review | `~/reviews/casehub-slots/issue-400-work-mcpdomain-spec-*` |
