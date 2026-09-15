@@ -68,23 +68,17 @@
 **Exploration:** deep-analysis
 **Status:** captured — unchanged, with explicit fallback for NotImplementedException dependency.
 
-## D6: Annotation model — JAX-RS first, generator uplift
+## D6: Annotation model — established platform annotations
 
-**Choice:** JAX-RS annotations (`@GET`, `@POST`, `@PUT`, `@DELETE`, `@Path`) for REST shape on SPI methods. New `@Description` annotation in platform-api for MCP/GraphQL metadata. `@ContextParam`, `@PaginatedResponse`, `@RestStatus` remain as platform annotations (no JAX-RS equivalent). `@PlatformQuery`/`@PlatformMutation` continue to work (backward compatible) but new SPIs use JAX-RS.
+**Choice:** Use the established platform annotation model: `@PlatformQuery("description")` / `@PlatformMutation("description")` as multi-transport semantic markers. `@RestMethod(HttpMethod.PUT/DELETE)` for non-default HTTP verbs. `@RestPath("/{id}")` for REST path overrides. `@PathParam`, `@ContextParam`, `@PaginatedResponse`, `@RestStatus` as parameter/response modifiers. Same model as engine and work SPIs.
 **Alternatives:**
-- Continue using `@PlatformQuery`/`@PlatformMutation` — works but maintains a parallel vocabulary tax, and the override problem (`@PlatformMutation` + `@RestMethod(PUT)` = two annotations for one thing) persists
-- Platform-only annotations (`@RestMethod(HttpMethod.GET)`) — avoids JAX-RS dependency but reinvents JAX-RS poorly
-**Rationale:** Three concerns were conflated in `@PlatformQuery("description")`: operation type, REST shape, and description. JAX-RS handles REST shape (industry standard, every Java developer knows it). `@Description` handles metadata. HTTP verb determines GraphQL query/mutation (`@GET` → query, else → mutation). No inference layer, no override needed. The `@Path` gotcha (GE-20260612-4f9a47 — class-level `@Path` causes Quarkus to discover the interface as a resource) is avoided by using `@Path` at method level only; the base path derives from `@McpDomain` value.
-**Trade-offs:** SPI module needs `jakarta.ws.rs-api` as a compile dependency (pure API JAR, already on every Quarkus classpath). Acceptable for webapp-api.
-**Implementation scope (platform#300):**
-1. Add `@Description` to `platform-api` — `@Target(METHOD)`, single `value()` field
-2. Update `McpDomainJandexScanner.scan()` in `generator-common` — add JAX-RS fallback (when `@PlatformQuery`/`@PlatformMutation` absent, check for `@GET`/`@POST`/`@PUT`/`@DELETE`/`@PATCH`; read `@Description` for desc text; read `@Path` for rest path). Fully backward compatible.
-3. Mirror same logic in `GraphQLResolverProcessor.scanAnnotatedInterfaces()` (Quarkus APT has separate inline scanning)
-4. Cross-slot: slot 192 Spring generators use shared `McpDomainJandexScanner` — they gain JAX-RS support automatically on rebase. HANDOFF note for slot 192.
-**Depends on:** D1 (webapp-api can add jakarta.ws.rs-api dependency)
-**Sources:** Issue #105 annotation model, `McpDomainJandexScanner.java` (generator-common in slot 192), `GraphQLResolverProcessor.java` (graphql-generator), first-principles analysis of concern separation
-**Exploration:** deep-analysis (first-principles redesign, cross-slot impact analysis)
-**Status:** revised — upgraded from reviewer's simple "use JAX-RS" to full generator uplift with shared scanner, cross-slot coordination, and `@Description` annotation
+- JAX-RS annotations (`@GET`, `@POST`, `@Path`) directly on SPI interfaces — blocked by Quarkus scanning: Quarkus discovers and processes JAX-RS annotations on interfaces and their implementing CDI beans, causing path conflicts with the generated resource classes. This is the specific known limitation that prompted creating the platform annotation vocabulary.
+- Issue #105's annotation model (JAX-RS + `@Description`) — aspirational but not feasible without a Quarkus extension to suppress JAX-RS scanning on `@McpDomain` interfaces. Not in scope.
+**Rationale:** Platform annotations exist for a concrete technical reason: Quarkus always finds and processes JAX-RS annotations. `@PlatformQuery`/`@PlatformMutation` are invisible to the runtime scanner — only the generator reads them. This separation is documented in platform#295 decisions D1 (multi-transport semantic markers), D3 (zero JAX-RS dependency in platform-api), and D8 (platform HttpMethod enum). The established model works, is tested across 3 prior migrations, and the Spring generators in slot 192 also use it via `McpDomainJandexScanner`.
+**Trade-offs:** Two annotations for non-default HTTP verbs (`@PlatformMutation + @RestMethod(PUT)`). This is the minority case — most mutations are POST, most queries are GET.
+**Sources:** platform#295 decisions D1/D3/D8, Quarkus JAX-RS scanning limitation (known issue), GE-20260612-4f9a47 (class-level @Path conflict), engine WorkItemApi.java (established pattern), `McpDomainJandexScanner.java` (shared scanner in generator-common)
+**Exploration:** deep-analysis (attempted JAX-RS redesign, discovered blocking constraint, reverted to established model)
+**Status:** revised — reverted from JAX-RS proposal to established platform annotations after confirming Quarkus scanning limitation
 
 ## D7: MCP surface migration strategy
 
