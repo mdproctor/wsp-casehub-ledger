@@ -1,85 +1,49 @@
 # Handover — Slot 194
 
 ## Branch
-- Ledger: `issue-208-class-mcpdomain-panache` (1 commit, not pushed)
-- Engine: `issue-1119-class-mcpdomain` (1 commit, not pushed)
-- IoT: `issue-105-class-mcpdomain` (1 commit, not pushed)
-- Work: `issue-401-class-mcpdomain-panache` (1 commit, not pushed)
-- Connectors: `issue-100-class-mcpdomain` (1 commit, not pushed)
-- Clinical: `issue-171-mcpdomain-spi` (9 commits, not pushed)
-- Neocortex (canonical): `panache-mcpdomain-port` (1 commit, not pushed)
-- Ops: `panache-to-jpa` (1 commit, not pushed)
-- Life: `panache-to-jpa` (1 commit, not pushed)
+All repos on main. Feature branches still exist (not deleted, not pushed).
 
 ## Active Issue
 `casehubio/clinical#171` — migrate clinical to @McpDomain SPI.
-Queue position 4/24 (expanded with class-based + Panache batches).
+Queue position 4/24. Sub-tasks remain (work#402, life#119).
 
 ## Session Summary
 
-### Clinical #171 — @McpDomain SPI Migration (Completed)
+### Clinical #172 — Panache-to-JPA Port (Completed)
 
-Finished migration started in previous session. Created 2 more SPI interfaces
-(EscalationPlanResource, TrialDashboardResource), bringing total to 15 @McpDomain
-SPIs with 15 APT-generated REST resources. Deleted 14 hand-written resources total.
-NarrativeResource stays hand-written (blocks dep boundary). DemoActionResource stays
-by design.
+Ported all 18 Panache files in clinical to plain JPA EntityManager:
+- 15 entity files: removed `extends PanacheEntityBase`, added 24 `@NamedQuery`
+  annotations, deleted all static query methods
+- 3 CBR files: replaced `PanacheEntityResolver` with `JpaEntityResolver`
+- Created `TenantEntityLookup` utility for the common `findByIdForTenant`
+  pattern (32 call sites across services, resources, demo code)
+- Updated ~60 caller files (services, APIs, CBR, demo, scenario)
+- Updated ~50 test files (constructor signatures, Panache calls)
+- Production code compiles clean. Unit tests pass.
+- `@QuarkusTest` integration tests have pre-existing CDI errors from engine#1119.
+  Total: 134 files changed, 1428 insertions, 786 deletions.
 
-CDI test failures investigated — root cause: engine #1049 moved CDI beans to plain
-POJOs in runtime-core. Created `ClinicalTestSpiDefaults.java` with 15 @DefaultBean
-producers as workaround. Remaining CDI failures are systemic (engine#1119).
+### Ecosystem-Wide Branch Merge (8 repos)
 
-### Engine #1119 — @DefaultBean Producers (Filed + Verified)
+Merged all feature branches to main across the slot:
+- Ledger: `issue-208-class-mcpdomain-panache` → main (ff)
+- Engine: `issue-1119-class-mcpdomain` → main (rebase + ff, 7 canonical catches up)
+- Work: `issue-401-class-mcpdomain-panache` → main (rebase + ff, 2 canonical catches up)
+- IoT: `issue-105-class-mcpdomain` → main (ff)
+- Connectors: `issue-100-class-mcpdomain` → main (ff)
+- Ops: `panache-to-jpa` → main (ff)
+- Life: `panache-to-jpa` → main (ff)
+- Clinical: `issue-171-mcpdomain-spi` → main (squash 12 → 1)
 
-Filed casehubio/engine#1119. User fixed it in a parallel session. Verified engine
-builds (excluding Spring modules which have a separate generator issue). Reinstalled
-engine SNAPSHOT to slot .m2.
-
-### Platform #341 — @McpDomain on Class (Reviewed)
-
-User implemented in canonical platform. Reviewed code: clean implementation,
-`DomainScanResult` gains `isInterface` flag, scanner handles both interface and
-class sources identically. Suggested collision warning and @ContextParam test coverage.
-User applied feedback.
-
-### Ecosystem-Wide @McpDomain Class-Based Conversion (20 interfaces)
-
-Converted interface+impl splits to class-based @McpDomain across 5 repos:
-- Ledger: 4 interfaces → class-based, 3 Panache → JPA (862 tests pass)
-- Engine: 5 interfaces → class-based (api + rest compile clean)
-- IoT: 5 interfaces → class-based (compiles clean)
-- Work: 5 interfaces → class-based + 21 entity Panache removals (partial)
-- Connectors: 1 interface → class-based (compiles clean)
-
-### Panache-to-JPA Porting (Partial)
-
-Ported simple Panache entity removals across repos:
-- Neocortex: 2 files (MemoryEntry, JpaMemoryStore)
-- Ops: 5 entities + 8 callers
-- Life: 3/4 entities (LifeCommitmentRecord deferred — 60+ callers)
-- Eidos: false positive (stale worktree copies only)
-
-Filed follow-up issues for remaining Panache work:
-- casehubio/work#402 — stores/repos/MongoDB (~45 files)
-- casehubio/life#119 — LifeCommitmentRecord (60+ callers)
-- casehubio/clinical#172 — 18 entity files
-
-### Issues Filed
-
-| Issue | Repo | What |
-|-------|------|------|
-| #1119 | engine | @DefaultBean producers for RuntimeBeans SPIs |
-| #341 | platform | @McpDomain on class (landed same session) |
-| #402 | work | Complete Panache-to-JPA (~45 files) |
-| #119 | life | LifeCommitmentRecord Panache (60+ callers) |
-| #172 | clinical | Panache-to-JPA (18 files) |
+Nothing pushed to `local` remotes yet.
 
 ## What's Next
 
-1. **work#402** — complete Panache-to-JPA in work stores/repos/MongoDB (~45 files)
-2. **life#119** — LifeCommitmentRecord Panache removal (60+ callers)
-3. **clinical#172** — port 18 Panache entity files to JPA
+1. **Push to local remotes** — all 8 repos have unpushed main commits
+2. **work#402** — complete Panache-to-JPA in work stores/repos/MongoDB (~45 files)
+3. **life#119** — LifeCommitmentRecord Panache removal (60+ callers)
 4. **aml#130** — migrate aml to @McpDomain SPI (use class-based from the start)
+5. **Remaining queue** — 20 items at position 4/24
 
 ## Standing Instructions
 1. Always rebase from origin/main before starting work.
@@ -88,3 +52,4 @@ Filed follow-up issues for remaining Panache work:
 4. The JDK 26 surefire fix is in `webapp/pom.xml` — apply to other casehub webapps if they hit the same hang.
 5. `casehub-platform-graphql-generator` is the APT processor — version managed by slot .m2 SNAPSHOT.
 6. Engine Spring modules don't compile — skip with `-pl '!runtime-spring,...'` when installing.
+7. Clinical `@QuarkusTest` integration tests broken by engine#1119 CDI ambiguity — pre-existing, not from Panache port.
