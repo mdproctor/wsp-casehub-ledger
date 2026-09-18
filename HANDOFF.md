@@ -1,72 +1,92 @@
 # Handover — Slot 194
 
 ## Branch
-All repos on main. Feature branch `issue-130-mcpdomain-spi` exists in aml (empty, no changes).
+AML on branch `issue-130-mcpdomain-spi` (7 commits). All other repos on main.
+Engine has 1 uncommitted-to-origin commit on main (TestWorkerProvisioner + TestCaseInstanceRepository).
+Qhorus on branch `issue-42-ux-overhaul` with 3 fix commits (V55/V56 migration fixes).
 
 ## Active Issue
 `casehubio/aml#130` — migrate aml to @McpDomain SPI.
-Queue position 4/24. Sub-tasks under clinical#171: work#402 blocked, life#119 done, clinical#172 done.
+Queue position 4/24.
 
 ## Session Summary
 
-### life#119 — Panache-to-JPA Port (Completed)
+### aml#130 — @McpDomain Migration (Complete, Tests Partially Fixed)
 
-Ported all 4 life entities from Panache active-record to plain JPA EntityManager:
-- **LifeCommitmentRecord**: removed `extends PanacheEntityBase`, 5 `@NamedQuery`, removed 3 static finders
-- **LifeCaseTracker**: 3 `@NamedQuery`, removed 3 static finders
-- **ExternalActor**: 2 `@NamedQuery` (findNotErased, findAll)
-- **LifeTaskContext**: 2 `@NamedQuery` (findByExternalActorId, countByExternalActorId)
-- ~20 production files: injected EntityManager, replaced Panache with em.find/em.persist/named queries
-- ~27 test files: @Inject EntityManager for @QuarkusTest, @Mock EntityManager for unit tests
-- WorkItemEntity/WorkItemTemplate calls left unchanged (casehub-work scope, still Panache)
-- Total: 57 files changed, 422 insertions, 215 deletions
-- Squashed to single commit `5d56332`, merged ff to main, pushed to local
-- GitHub issue closed
+Migrated all 37 AML REST endpoints from 12 hand-written JAX-RS resources to 9 `@McpDomain` API classes with APT-generated REST resources.
 
-### Local Remote Push (7/8 repos)
+**@McpDomain classes created** (`io.casehub.aml.service`):
+- `AmlInvestigationApi` (7 ops) — list, query, prior-context, flow, findings, gates, routing
+- `AmlEngineApi` (6 ops) — Layer 5/6/9 start, get, outcome
+- `AmlOversightControlApi` (2 ops) — suspend, resume (`@RolesAllowed`)
+- `AmlWorkerApi` (2 ops) — list tasks, respond
+- `AmlAuditApi` (3 ops) — audit trail, inclusion proof, provenance
+- `AmlComplianceApi` (1 op) — compliance evidence (`@PermitAll` implied)
+- `AmlErasureApi` (3 ops) — actor, entity, cross-tenant erasure (`@RolesAllowed`)
+- `AmlMetricsApi` (7 ops) — throughput, trust, gates, history, interventions, SAR quality, CBR bootstrap
+- `AmlSimulationApi` (6 ops) — seed, reset, investigate, CBR seed/clear (`@IfBuildProperty` gated)
 
-Pushed main to local remotes for: ledger, engine, iot, connectors, ops, life, clinical.
-Work repo skipped — active session in canonical clone (unstaged changes to casehub-platform-testing dep).
+**Also done:**
+- Converted `InvestigationSummaryRepository` from Panache to plain JPA (EntityManager + @NamedQuery)
+- Created local `PlanTrace` + `PlanCbrCase` in `aml.cbr` (relocated from neocortex-memory)
+- Fixed imports for ledger-core package moves (InclusionProof, ContentSanitiser)
+- Configured APT processor (maven-compiler-plugin + casehub-platform-graphql-generator)
+- Split secured endpoints (erasure, oversight-control) into separate @McpDomain classes for RBAC isolation
+- Created `TestCurrentPrincipal` (`@Alternative @Priority(200) @ApplicationScoped`) — provides default tenancy outside HTTP request scope
+- Fixed `Path.root()` → `Path.of("casehubio", "aml")` for CBR store scope
+- Added `@TestSecurity` to compliance and oversight tests
 
-## What's Next
+### Engine Fixes (1 commit on slot main, not pushed)
+- `TestCaseInstanceRepository`: added no-args constructor + `@Inject` on injection constructor
+- `TestWorkerProvisioner`: `@Alternative @Priority(1)` auto-completes provisioned workers via event bus
 
-1. **aml#130** — migrate aml to @McpDomain SPI (37 endpoints, 12 resources → 7 @McpDomain classes)
-   - Survey complete, grouping planned (see below)
-   - Branch `issue-130-mcpdomain-spi` exists (empty)
-   - WebSocket endpoint (AmlPushEndpoint) stays as-is
-2. **work#402** — complete Panache-to-JPA in work stores/repos/MongoDB (~45 files) — blocked by active session on canonical work repo
-3. **Remaining queue** — 19 items at position 4/24
+### Qhorus Fixes (3 commits on `issue-42-ux-overhaul`)
+- V55: removed partial index WHERE clause (H2 incompatible), added `corrects_message_id` to `message_ledger_entry`
+- V56: removed FK to `ledger_entry` (Flyway version ordering — V56 runs before V1000)
 
-### aml#130 Grouping Plan
+### Slot .m2 State
+Nuked and rebuilt from slot repos + host .m2 fallback. All slot repos (platform, engine, work, ledger, qhorus) installed from their slot clones. Non-slot repos (blocks, connectors, pages, neocortex) resolve from host .m2.
 
-| @McpDomain class | value | Endpoints | Source resources |
-|---|---|---|---|
-| `AmlInvestigationApi` | `aml/investigations` | 7 | AmlInvestigationResource, AmlInvestigationQueryResource |
-| `AmlEngineApi` | `aml/engine` | 8 | Layer5, Layer6, Layer9 |
-| `AmlWorkerApi` | `aml/workers` | 2 | AmlWorkerTaskResource |
-| `AmlAuditApi` | `aml/audit` | 3 | AuditTrail, Provenance |
-| `AmlComplianceApi` | `aml/compliance` | 4 | Layer7 (evidence + 3 erasure) |
-| `AmlMetricsApi` | `aml/metrics` | 7 | Metrics, SarQuality, CBR bootstrap |
-| `AmlSimulationApi` | `aml/simulation` | 6 | Simulation (dev-only, @IfBuildProperty) |
+### Test Results: 451 tests, 0 failures, ~5 errors
 
-Pattern: class-based @McpDomain (not interface), @ApplicationScoped, @PlatformQuery/@PlatformMutation methods.
-Reference impl: ledger's DefaultLedgerEntryApi.java.
+All previously-failing tests fixed except 5 remaining errors (4 unique test methods):
 
-### aml#130 Implementation Notes
-- AmlInvestigationQueryResource uses Panache Page — convert to JPA setFirstResult/setMaxResults
-- AmlWorkerTaskResource has inline logic — extract to service
-- AmlLayer6Resource GET has inline logic — extract to service
-- AmlCbrResource has inline EntityManager JPQL — keep as-is or extract
-- Slot 181 has active AML work (issue-469-dual-framework-core-extraction) — different scope but same repo, confirmed safe to proceed
+## What's Next — Fix Remaining 5 Test Errors
 
-### Pre-existing Issues (other repos, not blocking)
-- Life: upstream API compile errors (humanTask(), WorkItem→WorkItemEntity) — not from Panache port
-- Clinical: `@QuarkusTest` integration tests broken by engine#1119 CDI ambiguity
+### 1. `AmlLayer7ResourceTest` (3 methods fail)
+
+**Root cause:** The compliance evidence endpoint queries ledger entries via `LedgerEntryRepository.findBySubjectId()` which needs a JPA transaction context. The generated REST resource runs on virtual threads without automatic transaction wrapping.
+
+**Fix approach:**
+- Add `@Transactional` to `AmlComplianceEvidenceService.findEvidence()` method
+- Or add `@jakarta.transaction.Transactional` to the `AmlComplianceApi.getComplianceEvidence()` method (check if APT propagates it to the generated resource)
+- The `gdprDemoFlow_officerReview_erasure` test also calls erasure endpoints — may need `@TestSecurity` for the erasure calls within the test flow
+
+**Files:** `app/src/main/java/io/casehub/aml/compliance/AmlComplianceEvidenceService.java`, `app/src/main/java/io/casehub/aml/service/AmlComplianceApi.java`
+
+### 2. `CbrActivationIntegrationTest.learningMode_belowThreshold_advisorWritesActiveFalse`
+
+**Root cause:** The test asserts `active=false` on the CBR advisory but gets `active=true`. The advisory activation threshold is resolved via `PreferenceProvider` which may return a different default now. Check `AmlCbrPolicyKeys.ACTIVATION_THRESHOLD` default value vs. the number of seeded cases.
+
+**Files:** `app/src/test/java/io/casehub/aml/cbr/CbrActivationIntegrationTest.java`, `app/src/main/java/io/casehub/aml/cbr/AmlCbrPolicyKeys.java`
+
+### 3. `SarNarrativeSeedingIntegrationTest.seededInvestigation_narrativeSeededTrue`
+
+**Root cause:** Same pattern as CBR profile — the narrative seed flag is set by an async observer after investigation completion. The test may need an Awaitility wait for the narrative seed flag to propagate.
+
+**Files:** `app/src/test/java/io/casehub/aml/cbr/SarNarrativeSeedingIntegrationTest.java`
+
+### 4. `AmlCbrRetrieveTest` (1 method, 10s timeout)
+
+**Root cause:** The test stores a past CBR case with `Path.of("casehubio", "aml")` scope but queries with `Path.root()` scope. The scopes need to match. Check the query scope in the test.
+
+**Files:** `app/src/test/java/io/casehub/aml/cbr/AmlCbrRetrieveTest.java`
 
 ## Standing Instructions
 1. Always rebase from origin/main before starting work.
-2. Slot-local `.m2` at `slots/194/.m2` — install platform there, not `~/.m2`.
+2. Slot-local `.m2` was nuked and rebuilt — all slot repos installed, non-slot repos resolve from host .m2 fallback.
 3. Push slot clones to `local` remote first, then push from canonical local repos to GitHub.
-4. The JDK 26 surefire fix is in `webapp/pom.xml` — apply to other casehub webapps if they hit the same hang.
+4. Engine has unpushed commits — push to local remote when done.
 5. `casehub-platform-graphql-generator` is the APT processor — version managed by slot .m2 SNAPSHOT.
-6. Engine Spring modules don't compile — skip with `-pl '!runtime-spring,...'` when installing.
+6. The `@RolesAllowed` annotation propagates from @McpDomain methods to generated REST endpoints. `@PermitAll` does NOT propagate — split secured and unsecured endpoints into separate @McpDomain classes instead.
+7. `TestCurrentPrincipal` (`@Priority(200)`) overrides `SecurityIdentityCurrentPrincipal` (`@Priority(100)`) in tests — provides `DEFAULT_TENANT_ID` tenancy outside request scope.
