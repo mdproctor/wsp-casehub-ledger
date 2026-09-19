@@ -1,92 +1,55 @@
 # Handover — Slot 194
 
 ## Branch
-AML on branch `issue-130-mcpdomain-spi` (7 commits). All other repos on main.
-Engine has 1 uncommitted-to-origin commit on main (TestWorkerProvisioner + TestCaseInstanceRepository).
-Qhorus on branch `issue-42-ux-overhaul` with 3 fix commits (V55/V56 migration fixes).
+AML on branch `issue-130-mcpdomain-spi` (11 commits, all tests pass, issue closed).
+All other repos on main.
 
 ## Active Issue
-`casehubio/aml#130` — migrate aml to @McpDomain SPI.
-Queue position 4/24.
+`casehubio/soc#55` — migrate SOC to @McpDomain SPI.
+Queue position 6/24.
 
 ## Session Summary
 
-### aml#130 — @McpDomain Migration (Complete, Tests Partially Fixed)
+### aml#130 — Test Fixes (5 errors → 0)
 
-Migrated all 37 AML REST endpoints from 12 hand-written JAX-RS resources to 9 `@McpDomain` API classes with APT-generated REST resources.
+Fixed all 5 test errors from the @McpDomain migration:
 
-**@McpDomain classes created** (`io.casehub.aml.service`):
-- `AmlInvestigationApi` (7 ops) — list, query, prior-context, flow, findings, gates, routing
-- `AmlEngineApi` (6 ops) — Layer 5/6/9 start, get, outcome
-- `AmlOversightControlApi` (2 ops) — suspend, resume (`@RolesAllowed`)
-- `AmlWorkerApi` (2 ops) — list tasks, respond
-- `AmlAuditApi` (3 ops) — audit trail, inclusion proof, provenance
-- `AmlComplianceApi` (1 op) — compliance evidence (`@PermitAll` implied)
-- `AmlErasureApi` (3 ops) — actor, entity, cross-tenant erasure (`@RolesAllowed`)
-- `AmlMetricsApi` (7 ops) — throughput, trust, gates, history, interventions, SAR quality, CBR bootstrap
-- `AmlSimulationApi` (6 ops) — seed, reset, investigate, CBR seed/clear (`@IfBuildProperty` gated)
+1. **JAX-RS path shadowing** — `AmlComplianceApi` had `basePath="/api"` with `RestPath="/investigations/{caseId}/compliance-evidence"`. The generated resource at `@Path("/api")` was shadowed by `GeneratedAmlInvestigationsResource` at `@Path("/api/investigations")` — JAX-RS dispatches to the more specific class-level match → 404. Fix: `basePath="/api/investigations"`, `RestPath="/{caseId}/compliance-evidence"`.
 
-**Also done:**
-- Converted `InvestigationSummaryRepository` from Panache to plain JPA (EntityManager + @NamedQuery)
-- Created local `PlanTrace` + `PlanCbrCase` in `aml.cbr` (relocated from neocortex-memory)
-- Fixed imports for ledger-core package moves (InclusionProof, ContentSanitiser)
-- Configured APT processor (maven-compiler-plugin + casehub-platform-graphql-generator)
-- Split secured endpoints (erasure, oversight-control) into separate @McpDomain classes for RBAC isolation
-- Created `TestCurrentPrincipal` (`@Alternative @Priority(200) @ApplicationScoped`) — provides default tenancy outside HTTP request scope
-- Fixed `Path.root()` → `Path.of("casehubio", "aml")` for CBR store scope
-- Added `@TestSecurity` to compliance and oversight tests
+2. **`@RunOnVirtualThread` without `@Transactional`** — APT-generated endpoints use `@RunOnVirtualThread`. `AmlComplianceEvidenceService.findEvidence()` JPA queries returned empty without explicit transaction boundary. Fix: `@Transactional` on `findEvidence()` and `assembleEvidence()`.
 
-### Engine Fixes (1 commit on slot main, not pushed)
-- `TestCaseInstanceRepository`: added no-args constructor + `@Inject` on injection constructor
-- `TestWorkerProvisioner`: `@Alternative @Priority(1)` auto-completes provisioned workers via event bus
+3. **`@TestSecurity` missing** — `gdprDemoFlow_officerReview_erasure` called the erasure endpoint (`@RolesAllowed("aml-senior-compliance")`) without authentication. Fix: `@TestSecurity(user="compliance-officer", roles="aml-senior-compliance")`.
 
-### Qhorus Fixes (3 commits on `issue-42-ux-overhaul`)
-- V55: removed partial index WHERE clause (H2 incompatible), added `corrects_message_id` to `message_ledger_entry`
-- V56: removed FK to `ledger_entry` (Flyway version ordering — V56 runs before V1000)
+4. **CBR type mismatch** — `PlanCbrCase` (local record relocated from neocortex-memory) implements `CbrCase` but is NOT a `ResolvedCase`. Engine's `CbrRetrievalService` typeMap has `"plan" → ResolvedCase.class` — the store's `instanceof` filter rejected all `PlanCbrCase` entries. Fix: replaced `PlanCbrCase`/`PlanTrace` with `ResolvedCase`/`ResolutionStep` everywhere, deleted local classes.
 
-### Slot .m2 State
-Nuked and rebuilt from slot repos + host .m2 fallback. All slot repos (platform, engine, work, ledger, qhorus) installed from their slot clones. Non-slot repos (blocks, connectors, pages, neocortex) resolve from host .m2.
+5. **CBR store scope** — `AmlCaseProfileStoreObserver` stored at `Path.of("casehubio","aml")`, retrieval queries with `Path.root()`. `Path.root().isAncestorOf()` matches all paths so scope wasn't actually blocking, but aligned for consistency.
 
-### Test Results: 451 tests, 0 failures, ~5 errors
+### clinical#171, #172 — Closed
+Migration work was already on clinical main (`ce820c9`). Closed both issues.
 
-All previously-failing tests fixed except 5 remaining errors (4 unique test methods):
+### Queue Advanced
+clinical#171 → aml#130 → soc#55 (current).
 
-## What's Next — Fix Remaining 5 Test Errors
+### Upstream Issues Filed
+| # | Repo | Issue | Status |
+|---|------|-------|--------|
+| 1 | platform | #350 — APT path shadowing detection | Open |
+| 2 | platform | #351 — @RunOnVirtualThread @Transactional | Open |
+| 3 | engine | #1123 — CBR scope hardcoded Path.root() | Open |
+| 4 | engine | #1124 — CBR CASE_LIFETIME timing | Open |
+| 5 | neocortex | #368 — similarity normalization | Landed (fix in repo, but not the root cause — see #4 above) |
 
-### 1. `AmlLayer7ResourceTest` (3 methods fail)
+## Lessons for Next Migrations
 
-**Root cause:** The compliance evidence endpoint queries ledger entries via `LedgerEntryRepository.findBySubjectId()` which needs a JPA transaction context. The generated REST resource runs on virtual threads without automatic transaction wrapping.
+1. **basePath conflicts** — when two `@McpDomain` classes share a path prefix (e.g., `/api` and `/api/investigations`), the more specific class shadows the less specific one. Set basePath to the longest common prefix shared with sibling resources.
 
-**Fix approach:**
-- Add `@Transactional` to `AmlComplianceEvidenceService.findEvidence()` method
-- Or add `@jakarta.transaction.Transactional` to the `AmlComplianceApi.getComplianceEvidence()` method (check if APT propagates it to the generated resource)
-- The `gdprDemoFlow_officerReview_erasure` test also calls erasure endpoints — may need `@TestSecurity` for the erasure calls within the test flow
+2. **@Transactional** — any service called from a generated endpoint that uses JPA needs explicit `@Transactional`. The APT generator adds `@RunOnVirtualThread` which doesn't auto-wrap transactions.
 
-**Files:** `app/src/main/java/io/casehub/aml/compliance/AmlComplianceEvidenceService.java`, `app/src/main/java/io/casehub/aml/service/AmlComplianceApi.java`
+3. **CBR case types** — if the app uses a local `CbrCase` subclass instead of `ResolvedCase`, it must be registered via `CbrCaseTypeRegistration` or use `ResolvedCase` directly.
 
-### 2. `CbrActivationIntegrationTest.learningMode_belowThreshold_advisorWritesActiveFalse`
-
-**Root cause:** The test asserts `active=false` on the CBR advisory but gets `active=true`. The advisory activation threshold is resolved via `PreferenceProvider` which may return a different default now. Check `AmlCbrPolicyKeys.ACTIVATION_THRESHOLD` default value vs. the number of seeded cases.
-
-**Files:** `app/src/test/java/io/casehub/aml/cbr/CbrActivationIntegrationTest.java`, `app/src/main/java/io/casehub/aml/cbr/AmlCbrPolicyKeys.java`
-
-### 3. `SarNarrativeSeedingIntegrationTest.seededInvestigation_narrativeSeededTrue`
-
-**Root cause:** Same pattern as CBR profile — the narrative seed flag is set by an async observer after investigation completion. The test may need an Awaitility wait for the narrative seed flag to propagate.
-
-**Files:** `app/src/test/java/io/casehub/aml/cbr/SarNarrativeSeedingIntegrationTest.java`
-
-### 4. `AmlCbrRetrieveTest` (1 method, 10s timeout)
-
-**Root cause:** The test stores a past CBR case with `Path.of("casehubio", "aml")` scope but queries with `Path.root()` scope. The scopes need to match. Check the query scope in the test.
-
-**Files:** `app/src/test/java/io/casehub/aml/cbr/AmlCbrRetrieveTest.java`
+4. **@RolesAllowed propagation** — `@RolesAllowed` propagates from `@McpDomain` methods to generated REST endpoints. Tests calling secured endpoints need `@TestSecurity`.
 
 ## Standing Instructions
 1. Always rebase from origin/main before starting work.
-2. Slot-local `.m2` was nuked and rebuilt — all slot repos installed, non-slot repos resolve from host .m2 fallback.
-3. Push slot clones to `local` remote first, then push from canonical local repos to GitHub.
-4. Engine has unpushed commits — push to local remote when done.
-5. `casehub-platform-graphql-generator` is the APT processor — version managed by slot .m2 SNAPSHOT.
-6. The `@RolesAllowed` annotation propagates from @McpDomain methods to generated REST endpoints. `@PermitAll` does NOT propagate — split secured and unsecured endpoints into separate @McpDomain classes instead.
-7. `TestCurrentPrincipal` (`@Priority(200)`) overrides `SecurityIdentityCurrentPrincipal` (`@Priority(100)`) in tests — provides `DEFAULT_TENANT_ID` tenancy outside request scope.
+2. Slot-local `.m2` — all slot repos installed, non-slot repos resolve from host .m2 fallback.
+3. `casehub-platform-graphql-generator` is the APT processor.
