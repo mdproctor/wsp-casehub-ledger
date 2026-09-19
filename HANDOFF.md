@@ -1,7 +1,7 @@
 # Handover — Slot 194
 
 ## Branch
-AML on branch `issue-130-mcpdomain-spi` (11 commits, all tests pass, issue closed).
+SOC on branch `issue-55-mcpdomain-spi` (8 commits, compiles clean, tests blocked by neocortex#369).
 All other repos on main.
 
 ## Active Issue
@@ -10,44 +10,38 @@ Queue position 6/24.
 
 ## Session Summary
 
-### aml#130 — Test Fixes (5 errors → 0)
+### soc#55 — @McpDomain SPI Migration (functionally complete)
 
-Fixed all 5 test errors from the @McpDomain migration:
+Full migration of 8 hand-written JAX-RS REST resources to 7 `@McpDomain` classes with typed DTOs:
+- 24 typed DTO records (replacing `Map<String,Object>`)
+- `SocTrustService` extracted from inline logic
+- `SocBeanOverrides` for CDI disambiguation
+- Pre-existing `InclusionProof` import fixed
 
-1. **JAX-RS path shadowing** — `AmlComplianceApi` had `basePath="/api"` with `RestPath="/investigations/{caseId}/compliance-evidence"`. The generated resource at `@Path("/api")` was shadowed by `GeneratedAmlInvestigationsResource` at `@Path("/api/investigations")` — JAX-RS dispatches to the more specific class-level match → 404. Fix: `basePath="/api/investigations"`, `RestPath="/{caseId}/compliance-evidence"`.
+Tests blocked by `ClassNotFoundException: io.casehub.blocks.trust.TrustEvolutionConfig` — filed as neocortex#369.
 
-2. **`@RunOnVirtualThread` without `@Transactional`** — APT-generated endpoints use `@RunOnVirtualThread`. `AmlComplianceEvidenceService.findEvidence()` JPA queries returned empty without explicit transaction boundary. Fix: `@Transactional` on `findEvidence()` and `assembleEvidence()`.
+### CDI Fixes (applied to slot repos)
 
-3. **`@TestSecurity` missing** — `gdprDemoFlow_officerReview_erasure` called the erasure endpoint (`@RolesAllowed("aml-senior-compliance")`) without authentication. Fix: `@TestSecurity(user="compliance-officer", roles="aml-senior-compliance")`.
+- eidos: removed `@DefaultBean` from `DefaultCapabilityHealth`
+- engine: `@Vetoed` on `ActorStateResource`/`ActorStateAggregator`
+- soc: `SocBeanOverrides` `@Alternative @Priority` for `PlanItemStore`/`CapabilityHealth`
 
-4. **CBR type mismatch** — `PlanCbrCase` (local record relocated from neocortex-memory) implements `CbrCase` but is NOT a `ResolvedCase`. Engine's `CbrRetrievalService` typeMap has `"plan" → ResolvedCase.class` — the store's `instanceof` filter rejected all `PlanCbrCase` entries. Fix: replaced `PlanCbrCase`/`PlanTrace` with `ResolvedCase`/`ResolutionStep` everywhere, deleted local classes.
+### Slot Maintenance
 
-5. **CBR store scope** — `AmlCaseProfileStoreObserver` stored at `Path.of("casehubio","aml")`, retrieval queries with `Path.root()`. `Path.root().isAncestorOf()` matches all paths so scope wasn't actually blocking, but aligned for consistency.
-
-### clinical#171, #172 — Closed
-Migration work was already on clinical main (`ce820c9`). Closed both issues.
-
-### Queue Advanced
-clinical#171 → aml#130 → soc#55 (current).
+- Rebased all 20 repos from canonical main
+- Reinstalled platform, engine, work, ledger, qhorus to .m2
+- Fixed `InclusionProof` import drift in SOC (ledger package move)
 
 ### Upstream Issues Filed
+
 | # | Repo | Issue | Status |
 |---|------|-------|--------|
-| 1 | platform | #350 — APT path shadowing detection | Open |
-| 2 | platform | #351 — @RunOnVirtualThread @Transactional | Open |
-| 3 | engine | #1123 — CBR scope hardcoded Path.root() | Open |
-| 4 | engine | #1124 — CBR CASE_LIFETIME timing | Open |
-| 5 | neocortex | #368 — similarity normalization | Landed (fix in repo, but not the root cause — see #4 above) |
+| 1 | neocortex | #369 — TrustConsolidationPhase ClassNotFoundException | Open |
 
-## Lessons for Next Migrations
+## What's Next
 
-1. **basePath conflicts** — when two `@McpDomain` classes share a path prefix (e.g., `/api` and `/api/investigations`), the more specific class shadows the less specific one. Set basePath to the longest common prefix shared with sibling resources.
-
-2. **@Transactional** — any service called from a generated endpoint that uses JPA needs explicit `@Transactional`. The APT generator adds `@RunOnVirtualThread` which doesn't auto-wrap transactions.
-
-3. **CBR case types** — if the app uses a local `CbrCase` subclass instead of `ResolvedCase`, it must be registered via `CbrCaseTypeRegistration` or use `ResolvedCase` directly.
-
-4. **@RolesAllowed propagation** — `@RolesAllowed` propagates from `@McpDomain` methods to generated REST endpoints. Tests calling secured endpoints need `@TestSecurity`.
+1. Fix neocortex#369, then run SOC tests to verify migration
+2. After tests green: `work next` → `life#118` (migrate life to @McpDomain SPI)
 
 ## Standing Instructions
 1. Always rebase from origin/main before starting work.
