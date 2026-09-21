@@ -1,29 +1,32 @@
-# Handover — Slot 194 (COMPLETE — ready to archive)
+# Handover — Slot 194
 
-## Queue: 24/24 done
+## Active Issue
+`casehubio/platform#378` — fix 104 Object returns with typed records
+Queue position 1/6 (hardening phase).
 
-The @McpDomain SPI migration across the CaseHub ecosystem is complete.
-Every user-facing operation now has tri-channel REST + GraphQL + MCP parity.
-Build enforcement prevents drift.
+## Context
 
-## Deliverables
+The @McpDomain migration (24/24 original queue items) is complete. This slot is now in **hardening phase** — fixing type safety, config gaps, and generator bugs identified in the final audit.
 
-- **~140 @McpDomain classes** across 18 repos
-- **~260+ operations** with tri-channel parity
-- **Build enforcement** (platform#374) — `@HandWrittenEndpoint` + `McpDomainEnforcementProcessor`
-- **All @Tool annotations stripped** (except platform infra)
-- **CDI fixes** across engine, eidos, neocortex
-- **Qhorus** — 113 ops migrated separately, verified green
+## Queue (platform#377 children)
 
-## Follow-up Epic: platform#377
+1. **platform#378** ← active — Replace 104 `Object`-returning @McpDomain methods with typed records across ops(29), claudony(27), fsitrading(26), life(15), chat-app(5)
+2. **ledger#210** — Wire APT generator for 5 existing @McpDomain classes
+3. **work#405** — @McpDomain for 25 bare REST resources (queues, federation, bulk ops)
+4. **platform#379** — Generator bugs: @PaginatedResponse shadowing, @Valid dep, @DefaultValue
+5. **platform#380** — @HandWrittenEndpoint or delete old REST across 13 repos
+6. **platform#381** — Consolidation: shared ApiResult, merge single-method classes
 
-Post-migration hardening — 14 items covering:
-- Type safety: 104 `Object` returns → typed (ops, claudony, fsitrading, life, chat-app)
-- Config: ledger APT generator, domain filter gaps (work, life, devtown)
-- Coverage: work has 25 bare REST resources
-- Generator bugs: @PaginatedResponse shadowing, @Valid dep, @DefaultValue propagation
-- Consolidation: shared ApiResult, merge single-method classes, extract inner records
+## Standing Rules
 
-## Standing Rule
+- **Type safety is non-negotiable** — no `Object` returns, no raw types, proper generics always
+- Inject services directly — never delegate to REST resources via `.getEntity()`
+- `List<T>`, `Map<K,V>`, `Optional<T>` — always parameterised
+- `Map<String,Object>` → create a typed record when the structure is known
 
-**Type safety is non-negotiable.** No `Object` returns, no raw types, proper generics always. Inject services directly — never delegate to REST resources via `.getEntity()`. See feedback memory `type-safety-generics`.
+## Ecosystem State
+
+- 18 repos with @McpDomain tri-channel parity
+- Build enforcement active (platform#374)
+- All @Tool annotations stripped (except platform infra)
+- Qhorus migrated separately (113 ops, verified green)
