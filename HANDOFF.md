@@ -1,45 +1,55 @@
 # Handover — Slot 194
 
 ## Active Issue
-`casehubio/ledger#210` — closed this session (APT generator wired).
-Queue position 26/31 — advance needed to activate next issue.
+`casehubio/work#405` — completed this session. Branch `issue-405-mcpdomain-rest` in work repo (3 commits, not yet merged).
+Queue position 27/31 — advance needed to activate next issue.
 
 ## Context
 
-The @McpDomain migration (24/24 original queue items) and **hardening phase** are progressing. Two issues closed this session:
-
-1. **platform#378** (closed) — 119 Object-returning @McpDomain methods replaced with typed records across 5 repos
-2. **ledger#210** (closed) — APT generator wired for @McpDomain classes in ledger rest module
+The @McpDomain migration (platform#300 epic) is in its hardening phase. This session completed work#405 — the largest remaining coverage gap: 25 bare REST resources across 9 modules in casehub-work.
 
 ## What Was Done
 
-### platform#378 — Type Safety (119 methods across 5 repos)
+### work#405 — @McpDomain for 25 bare REST resources
 
-All `.getEntity()` delegation eliminated. Services injected directly with typed returns:
+All 25 production REST resources in casehub-work now have @McpDomain coverage:
 
-| Repo | Methods Fixed | Commit | Branch |
-|------|--------------|--------|--------|
-| chat-app | 5 | `38c5ac5` | `issue-42-ux-overhaul` |
-| life | 17 | `4efc47d` | `issue-118-mcpdomain-spi` |
-| ops | 29 | `8dc59e2` | `issue-90-mcpdomain-spi` |
-| claudony | 26 + fix | `c4ae2cd`, `1a778c2` | `issue-204-mcpdomain-spi` |
-| fsitrading | 42 | `0105e23` | `issue-47-mcpdomain-spi` |
+| Category | Count |
+|----------|-------|
+| @McpDomain interfaces/classes created | 20 |
+| View/request records created | 53 |
+| Implementation classes created | 20 |
+| Hand-written REST resources deleted | 19 |
+| @HandWrittenEndpoint annotated | 4 |
+| Webhooks skipped (not domain APIs) | 2 |
+| Modules with APT generator wired | 9 |
 
-All repos compile clean (only pre-existing errors in unrelated files).
+**Commit 1** (`31b7d34`): rest module — 9 resources converted (audit, vocabulary, spawn-groups, instances, bulk, spawn, schedules, templates, label-rules). Template PATCH retained as @HandWrittenEndpoint (JSON Merge Patch needs raw JsonNode).
 
-### ledger#210 — APT Generator Wiring
+**Commit 2** (`60a15a4`): SlaAdminResource and FederationEventResource annotated @HandWrittenEndpoint (admin infra and inbound webhook).
 
-- Moved 4 @McpDomain classes from `runtime/service/api/` to `rest/api/` (matches engine pattern — extension runtime jars can't have `@RunOnVirtualThread` endpoints)
-- Added `casehub-platform-graphql-generator` APT to `rest/pom.xml`
-- Domain filter: `ledger/entries,ledger/attestations,ledger/trust,ledger/verification`
-- Deleted 4 hand-written REST resource classes + 3 tests (generated endpoints replace them)
-- All 13 modules pass
+**Commit 3** (`0c654bf`): 7 remaining modules — queues(2), ai(3), federation(1), issue-tracker(1), reports(1), progress-rest(1), ledger(2). APT generator wired in all 7 module pom.xml files.
 
-## Queue (platform#377 children)
+### Ecosystem scan — zero gaps
+
+Scanned all 8 repos in slot 194. No bare REST resources remain anywhere:
+- aml: migrated in aml#130
+- clinical, life, soc, iot, chat-app, ledger: clean
+- work: migrated this session
+
+The AML note in the previous handoff about remaining hand-written resources was stale.
+
+### Generator bugs discovered
+
+Two APT generator issues encountered during this session (relevant to platform#379):
+1. **`page` variable collision** — `@PaginatedResponse` generates `var page = ...` which collides if the API method has a parameter named `page`. Workaround: renamed to `pageIndex`.
+2. **Hardcoded `totalCount()` accessor** — `@PaginatedResponse` calls `.totalCount()` on the return type. The field name must be exactly `totalCount`, not `total` or anything else.
+
+## Queue (platform#300 children)
 
 1. ~~**platform#378**~~ done — Replace 104 Object returns with typed records
 2. ~~**ledger#210**~~ done — Wire APT generator for 5 existing @McpDomain classes
-3. **work#405** — @McpDomain for 25 bare REST resources (queues, federation, bulk ops)
+3. ~~**work#405**~~ done — @McpDomain for 25 bare REST resources
 4. **platform#379** — Generator bugs: @PaginatedResponse shadowing, @Valid dep, @DefaultValue
 5. **platform#380** — @HandWrittenEndpoint or delete old REST across 13 repos
 6. **platform#381** — Consolidation: shared ApiResult, merge single-method classes
@@ -53,6 +63,8 @@ All repos compile clean (only pre-existing errors in unrelated files).
 
 ## Notes for Next Session
 
-- The .plan still shows ledger#210 as active — run `work next` to advance to work#405
-- Commits are on feature branches in each repo, not on main — need work-end per repo to land them
-- claudony in IntelliJ workspace is from slot 202, not 194 — verify before editing
+- The .plan still shows work#405 as active — run `work next` to advance to platform#379
+- work#405 branch (`issue-405-mcpdomain-rest`) needs work-end to merge to main
+- platform#379 is in casehubio/platform — different repo, different kind of work (generator internals)
+- The two generator bugs found this session (page collision, totalCount hardcode) may be the same issues tracked in platform#379
+- Some work modules (queues, ai) are commented out of the parent reactor (tracked by work#403) — deleting old REST resources may help re-enable them
