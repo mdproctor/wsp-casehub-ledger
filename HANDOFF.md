@@ -1,56 +1,37 @@
 # Handover — Slot 194
 
 ## Active Issue
-`casehubio/work#405` — completed this session. Branch `issue-405-mcpdomain-rest` in work repo (3 commits, not yet merged).
-Queue position 27/31 — advance needed to activate next issue.
+`casehubio/platform#379` — in progress. Branch `issue-379-generator-bugs` in platform repo (1 commit).
+Queue position 28/31.
 
 ## Context
 
-The @McpDomain migration (platform#300 epic) is in its hardening phase. This session completed work#405 — the largest remaining coverage gap: 25 bare REST resources across 9 modules in casehub-work.
+The @McpDomain migration (platform#300 epic) continues. This session closed work#405 (merged to main, issue closed) and advanced to platform#379 — three APT generator bugs.
 
 ## What Was Done
 
-### work#405 — @McpDomain for 25 bare REST resources
+### work#405 — @McpDomain for 25 bare REST resources (closed)
 
-All 25 production REST resources in casehub-work now have @McpDomain coverage:
+Squash-merged branch `issue-405-mcpdomain-rest` to main as `db02951b`. Branch stamped, issue closed on GitHub. All 25 production REST resources in casehub-work now have @McpDomain coverage.
 
-| Category | Count |
-|----------|-------|
-| @McpDomain interfaces/classes created | 20 |
-| View/request records created | 53 |
-| Implementation classes created | 20 |
-| Hand-written REST resources deleted | 19 |
-| @HandWrittenEndpoint annotated | 4 |
-| Webhooks skipped (not domain APIs) | 2 |
-| Modules with APT generator wired | 9 |
+### platform#379 — Generator bugs (in progress)
 
-**Commit 1** (`31b7d34`): rest module — 9 resources converted (audit, vocabulary, spawn-groups, instances, bulk, spawn, schedules, templates, label-rules). Template PATCH retained as @HandWrittenEndpoint (JSON Merge Patch needs raw JsonNode).
+Three fixes across both Quarkus (`GraphQLResolverProcessor`) and Spring (`SpringDomainRestControllerWriter`) REST generators:
 
-**Commit 2** (`60a15a4`): SlaAdminResource and FederationEventResource annotated @HandWrittenEndpoint (admin infra and inbound webhook).
+1. **`var page` shadowing** — renamed generated variable to `__pageResult` to avoid colliding with method parameters named `page`
+2. **`@Valid` conditional** — `@jakarta.validation.Valid` now only propagated when present on the SPI parameter; previously added unconditionally for all body params
+3. **`@DefaultValue` propagation** — new `@io.casehub.platform.api.mcp.DefaultValue` annotation; scanned by both Jandex and APT scanners; propagated to `@RequestParam(defaultValue=...)` (Spring) and `@jakarta.ws.rs.DefaultValue` (Quarkus)
 
-**Commit 3** (`0c654bf`): 7 remaining modules — queues(2), ai(3), federation(1), issue-tracker(1), reports(1), progress-rest(1), ledger(2). APT generator wired in all 7 module pom.xml files.
+Files changed: `ResolvedParam` (both copies), `McpDomainJandexScanner`, `GraphQLResolverProcessor`, `SpringDomainRestControllerWriter`, `DefaultValue.java` (new). Tests added for all three fixes.
 
-### Ecosystem scan — zero gaps
-
-Scanned all 8 repos in slot 194. No bare REST resources remain anywhere:
-- aml: migrated in aml#130
-- clinical, life, soc, iot, chat-app, ledger: clean
-- work: migrated this session
-
-The AML note in the previous handoff about remaining hand-written resources was stale.
-
-### Generator bugs discovered
-
-Two APT generator issues encountered during this session (relevant to platform#379):
-1. **`page` variable collision** — `@PaginatedResponse` generates `var page = ...` which collides if the API method has a parameter named `page`. Workaround: renamed to `pageIndex`.
-2. **Hardcoded `totalCount()` accessor** — `@PaginatedResponse` calls `.totalCount()` on the return type. The field name must be exactly `totalCount`, not `total` or anything else.
+Full platform build running — generator-common, graphql-generator, and graphql-spring-generator tests already verified green individually.
 
 ## Queue (platform#300 children)
 
 1. ~~**platform#378**~~ done — Replace 104 Object returns with typed records
 2. ~~**ledger#210**~~ done — Wire APT generator for 5 existing @McpDomain classes
 3. ~~**work#405**~~ done — @McpDomain for 25 bare REST resources
-4. **platform#379** — Generator bugs: @PaginatedResponse shadowing, @Valid dep, @DefaultValue
+4. **platform#379** — Generator bugs: @PaginatedResponse shadowing, @Valid dep, @DefaultValue ← active
 5. **platform#380** — @HandWrittenEndpoint or delete old REST across 13 repos
 6. **platform#381** — Consolidation: shared ApiResult, merge single-method classes
 
@@ -60,11 +41,3 @@ Two APT generator issues encountered during this session (relevant to platform#3
 - Inject services directly — never delegate to REST resources via `.getEntity()`
 - `List<T>`, `Map<K,V>`, `Optional<T>` — always parameterised
 - `Map<String,Object>` → create a typed record when the structure is known
-
-## Notes for Next Session
-
-- The .plan still shows work#405 as active — run `work next` to advance to platform#379
-- work#405 branch (`issue-405-mcpdomain-rest`) needs work-end to merge to main
-- platform#379 is in casehubio/platform — different repo, different kind of work (generator internals)
-- The two generator bugs found this session (page collision, totalCount hardcode) may be the same issues tracked in platform#379
-- Some work modules (queues, ai) are commented out of the parent reactor (tracked by work#403) — deleting old REST resources may help re-enable them
