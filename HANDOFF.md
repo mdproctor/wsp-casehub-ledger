@@ -1,66 +1,65 @@
 # Handover — Slot 194
 
 ## Active Issue
-`casehubio/platform#404` — migrate webhook resources to @PlatformWebhook. Queue position 35/36.
+`casehubio/platform#414` — generator polish. Queue position 37/41.
 
 ## Context
 
-The @McpDomain migration (platform#300 epic) is nearly complete. This session completed #401 (@PlatformWebhook generator) and #404 (consumer migration). One issue remains: work-end.
+The @McpDomain migration (platform#300 epic) is complete — all 36 original issues done. This session completed #401 (@PlatformWebhook generator with 8 improvements) and #404 (migrated all 8 webhook resources across 6 repos). Five follow-up polish issues were filed (#414-#418) and appended to the queue.
 
-## What Was Done
+## What Was Done This Session
 
-### platform#401 — @PlatformWebhook generator support (closed)
+### platform#401 — @PlatformWebhook generator (closed)
 
-Built 8 generator improvements in a single feature:
+Built 8 generator improvements in `GraphQLResolverProcessor`:
+1. `@PlatformWebhook` — POST, no GraphQL, @PermitAll default, custom `consumes`
+2. `@HeaderParam` — HTTP header parameters on any operation type
+3. `@QueryParam` — explicit query parameters
+4. `@ContextParam` HTTP context — httpHeaders, queryParams, requestUrl
+5. `@PermitAll` annotation pass-through
+6. `Response` return type pass-through
+7. `Uni<T>` — skips @RunOnVirtualThread
+8. `@BeanParam` expansion — record → individual @QueryParam
 
-1. **@PlatformWebhook** annotation — POST, no GraphQL resolver, @PermitAll default, custom `consumes`
-2. **@HeaderParam** — HTTP header parameters on any operation type
-3. **@QueryParam** — explicit query parameters (required for webhooks, optional for mutations)
-4. **@ContextParam HTTP context** — httpHeaders, queryParams, requestUrl resolution keys
-5. **@PermitAll** annotation pass-through from domain methods
-6. **Response return type pass-through** — no double-wrapping
-7. **Uni\<T\> return type** — skips @RunOnVirtualThread, returns directly
-8. **@BeanParam expansion** — complex type in GET expands to individual @QueryParam
+76 tests pass (65 existing + 11 new). Smart imports (no unused JAX-RS verb imports). 5 commits on `issue-381-consolidation`.
 
-Polish: smart imports (only emit used JAX-RS verbs), no duplicate imports, @NameBinding pass-through in both Jandex and RoundEnv scan paths.
+### platform#404 — webhook migration (closed)
 
-76 tests pass (65 existing + 11 new). 5 commits on `issue-381-consolidation`.
+All 8 resources converted across 6 repos:
 
-### platform#404 — migrate webhook resources to @PlatformWebhook (closed)
+| # | Repo | Resource | Branch |
+|---|---|---|---|
+| 1 | platform | CallbackDispatchResource | issue-381-consolidation |
+| 2 | platform | EngagementCallbackResource | issue-381-consolidation |
+| 3 | work | JiraWebhookResource | issue-404-webhook-migration |
+| 4 | work | GitHubWebhookResource | issue-404-webhook-migration |
+| 5 | work | FederationEventResource | issue-404-webhook-migration |
+| 6 | devtown | GitHubWebhookResource | issue-204-mcpdomain-spi |
+| 7 | connectors | WebhookRouter | issue-100-mcpdomain-full-parity |
+| 8 | qhorus | WebhookRegistryResource | issue-42-ux-overhaul |
 
-Converted all 8 resources across 6 repos:
+Platform tests verified (callback-client: 13, notification-dispatch: 11). Consumer repos compilation-verified only — #417 covers full test verification.
 
-| # | Repo | Resource | Annotations used | Branch |
-|---|---|---|---|---|
-| 1 | platform | CallbackDispatchResource | @PlatformWebhook + @PathParam × 2 + @HeaderParam | issue-381-consolidation |
-| 2 | platform | EngagementCallbackResource | @PlatformWebhook + @PlatformMutation + @ContextParam("httpHeaders") | issue-381-consolidation |
-| 3 | work | JiraWebhookResource | @PlatformWebhook + @QueryParam("secret") + @PathParam | issue-404-webhook-migration |
-| 4 | work | GitHubWebhookResource | @PlatformWebhook + @HeaderParam("X-Hub-Signature-256") + @PathParam | issue-404-webhook-migration |
-| 5 | work | FederationEventResource | @PlatformWebhook + @HeaderParam × 2 + CloudEvents consumes | issue-404-webhook-migration |
-| 6 | devtown | GitHubWebhookResource | @PlatformWebhook + @HeaderParam × 3 | issue-204-mcpdomain-spi |
-| 7 | connectors | WebhookRouter | @PlatformWebhook + @PlatformQuery + @ContextParam(HTTP) | issue-100-mcpdomain-full-parity |
-| 8 | qhorus | WebhookRegistryResource | @PlatformMutation + @PlatformQuery (CRUD, not webhook) | issue-42-ux-overhaul |
+## Uncommitted Changes
 
-All platform tests pass (callback-client: 13, notification-dispatch: 11, graphql-generator: 76).
+All repos clean. All changes committed on their respective branches.
 
-## Uncommitted Changes Across Repos
+## Queue (follow-up polish)
 
-All repos clean. Commits on branches:
-- **platform** (`issue-381-consolidation`): 5 commits — generator + 2 migrations
-- **work** (`issue-404-webhook-migration`): 1 commit — 3 webhook migrations
-- **devtown** (`issue-204-mcpdomain-spi`): 1 commit — GitHub webhook migration
-- **connectors** (`issue-100-mcpdomain-full-parity`): 1 commit — WebhookRouter migration
-- **qhorus** (`issue-42-ux-overhaul`): 1 commit — WebhookRegistryResource migration
-
-## Queue (platform#300 children)
-
-1. ~~**platform#401**~~ done
-2. ~~**platform#404**~~ done
-3. **work-end** — close this branch
+| # | Issue | What | Scale |
+|---|---|---|---|
+| 37 | platform#414 | Generator polish — skip Response in GraphQL, fix CurrentPrincipal injection | S |
+| 38 | platform#415 | Test coverage — @NameBinding, @ContextParam HTTP keys, multi-value consumes | XS |
+| 39 | platform#416 | @BeanParam records-only — document limitation | XS |
+| 40 | platform#417 | Consumer webhook migration — verify full test suites | S |
+| 41 | platform#418 | ARC42STORIES.MD — @McpDomain generator architecture section | S |
 
 ## Notes for Next Session
 
-- Both #401 and #404 need GitHub issues closed
-- The slot's local .m2 has the updated platform-api and graphql-generator installed
-- Consumer repos need their branches merged via work-end
-- The @McpDomain generator is now feature-complete: queries, mutations, streams, webhooks, @BeanParam, Uni\<T\>, @ContextParam HTTP, annotation pass-through
+- All generator code and consumer migrations are on existing branches, not merged to main yet
+- The slot's local .m2 (`/Users/mdproctor/claude/casehub/slots/194/.m2`) has the updated platform-api and graphql-generator installed
+- #414 is the most important follow-up — Response returns in GraphQL resolvers will produce runtime errors if GraphQL generation is enabled for a domain with Response-returning methods
+- #415 and #416 are quick wins — 3 test methods and a compile-time error message
+- #417 requires running QuarkusTest suites in 5 consumer modules — may need Docker for some
+- #418 is documentation-only
+- Platform branch `issue-381-consolidation` has accumulated work from #381 through #404 — will need squash/review at work-end
