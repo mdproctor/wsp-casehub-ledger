@@ -154,10 +154,10 @@ Some domains use `org/area` convention (`fsi/compliance`, `work/items`), others 
 
 | # | Recommendation | Impact | Effort | Issue |
 |---|---------------|--------|--------|-------|
-| 1 | `casehub_search` tool — keyword search across operations | High | S | TBD |
-| 2 | App-level grouping in `casehub_model` | High | M | TBD |
-| 3 | Build-time summary validation | Medium | XS | TBD |
-| 4 | Return type generics in discovery output | Medium | S | TBD |
-| 5 | Domain naming convention | Low | XS | TBD |
-| 6 | Capability tags | Low | M | TBD |
-| 7 | Operation examples | Low | S | TBD |
+| 1 | `casehub_search` tool — keyword search across operations | High | S | platform#406 |
+| 2 | App-level grouping in `casehub_model` | High | M | platform#407 |
+| 3 | Build-time summary validation | Medium | XS | platform#408 |
+| 4 | Return type generics in discovery output | Medium | S | platform#409 |
+| 5 | Domain naming convention | Low | XS | — |
+| 6 | Capability tags | Low | M | — |
+| 7 | Operation examples | Low | S | — |
