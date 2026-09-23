@@ -1,61 +1,74 @@
 # Handover — Slot 194
 
 ## Active Issue
-`casehubio/platform#381` — not started. Queue position 30/36.
+`casehubio/platform#403` — migrate 4 SSE resources to @PlatformStream. Queue position 33/36.
 
 ## Context
 
-The @McpDomain migration (platform#300 epic) is in its final stretch. This session completed platform#380 (REST resource triage across 17 repos), #387 (clean generated names — done by user), #388 (inner record extraction), and #389 (SPI injection anti-pattern). Six issues remain in the queue.
+The @McpDomain migration (platform#300 epic) is nearing completion. This session completed three issues: consolidation (#381), LLM usability evaluation (#382), and @PlatformStream runtime discovery (#400). Three issues remain in the queue.
 
 ## What Was Done
 
-### platform#380 — @HandWrittenEndpoint or delete old REST (closed)
+### platform#381 — Consolidation: shared ApiResult, merge single-method classes (closed)
 
-Triaged all remaining hand-written `@Path` REST resources across 17 repos + qhorus:
+- Created `ApiResult(boolean ok, String id, String detail)` in platform-api — shared result record
+- Merged `ClaudonyActionApi` (1 method) into `ClaudonyCaseApi` at `/actions` sub-path
+- Merged `FsiAuditApi` (1 method) into `FsiComplianceApi` at `/audit/orders/{orderId}`
+- Extracted `PostMessageResult` from chat-app `ChatMessageApi` to standalone file
+- Replaced `MoveChannelResult` in chat-app with `ApiResult`
+- Replaced `WorkitemResult` and `CommitmentResult` in openclaw with `ApiResult`
+- Net: 2 @McpDomain classes eliminated, 2 per-repo result records consolidated
 
-- **~55 old resources deleted** — each verified to have full method coverage by its @McpDomain-generated counterpart
-- **17 gap SPIs created** — resources that had no @McpDomain SPI were converted (fsitrading 11, qhorus 3, iot 2, clinical 1, devtown 1)
-- **33 genuine @HandWrittenEndpoint** — webhooks, SSE, auth, A2A, connectors, game simulation
-- **SPI injection anti-pattern fixed** — 7 repos had SPIs injecting old REST resources directly; refactored to inject services
-- **Inner records extracted** — chat-app, ops, fsitrading had inner record types blocking deletion; extracted to standalone classes
-- **Object return types fixed** — multiple SPIs had `Object` returns; replaced with typed records
+### platform#382 — Eval: @McpDomain real-world LLM usability (closed)
 
-### platform#387 — Drop Generated prefix (landed by user)
+Structural evaluation of the full CaseHub MCP surface: 142 domains, 607 operations across 16 repos.
 
-Generator now produces clean class names (`ChatMessagesResource` not `GeneratedChatMessagesResource`) in project-local packages (`.rest` not `.platform.rest.generated`). Package derivation: replace `.api` segment with `.rest`/`.graphql`.
+Key findings:
+- Hierarchy works for single-app, breaks at org scale (142 domains in flat list)
+- Discovery is browse-only — keyword search is highest-impact improvement
+- Return type erasure (List not List<LedgerEntry>) hampers LLM understanding
 
-### platform#388, #389 — Inner records + SPI injection (closed)
+Filed 4 improvement issues:
+- platform#406 — `casehub_search` tool (keyword search across operations)
+- platform#407 — app-level grouping in `casehub_model`
+- platform#408 — build-time summary validation
+- platform#409 — return type generics in discovery output
 
-Both completed as part of #380 work. All inner records extracted, all SPI injection anti-patterns resolved.
+Evaluation spec: `specs/eval-mcpdomain-llm-usability.md`
 
-### New issues filed
+### platform#400 — @PlatformStream generator support (closed)
 
-- **platform#400** — `@PlatformSse` generator support for SSE streaming (M / Med)
-- **platform#401** — `@PlatformWebhook` generator support for webhook endpoints (L / High)
-- **platform#403** — migrate 4 SSE resources after #400 lands (S / Low, blocked by #400)
-- **platform#404** — migrate 8 webhook resources after #401 lands (S / Low, blocked by #401)
+Found that `@PlatformStream` annotation and both APT generators (Quarkus + Spring) already existed. The gap was runtime MCP discovery:
+- Added `STREAM` to `OperationDescriptor.OperationType`
+- `GraphQLModelScanner` now scans `@PlatformStream` methods
+- `DomainContentFormatter` shows streams in `casehub_model` output
+- Stream operations excluded from `casehub_action`/`casehub_activate` (Multi<T> can't serialize)
 
-### Rebase status
+## Uncommitted Changes Across Repos
 
-17 of 18 repos rebased against canonical main. Conflicts resolved for iot and claudony. AML skipped (concurrent work from slot 181).
+All repos are clean. Commits on feature branches:
+- **platform** (`issue-381-consolidation`): ApiResult + stream discovery (2 commits)
+- **claudony** (`issue-204-mcpdomain-spi`): merged ActionApi into CaseApi
+- **fsitrading** (`issue-47-mcpdomain-spi`): merged AuditApi into ComplianceApi
+- **chat-app** (`issue-42-ux-overhaul`): extracted PostMessageResult, replaced MoveChannelResult
+- **openclaw** (`issue-77-mcpdomain-spi`): replaced WorkitemResult/CommitmentResult with ApiResult
 
 ## Queue (platform#300 children)
 
-1. ~~**platform#380**~~ done
-2. **platform#381** — Consolidation: shared ApiResult, merge single-method classes ← active
-3. **platform#382** — Eval: @McpDomain real-world LLM usability
-4. **platform#400** — @PlatformSse generator support
-5. **platform#403** — migrate SSE resources (blocked by #400)
-6. **platform#401** — @PlatformWebhook generator support
-7. **platform#404** — migrate webhook resources (blocked by #401)
+1. ~~**platform#381**~~ done
+2. ~~**platform#382**~~ done
+3. ~~**platform#400**~~ done
+4. **platform#403** — migrate 4 SSE resources to @PlatformStream ← active
+5. **platform#401** — @PlatformWebhook generator support
+6. **platform#404** — migrate webhook resources to @PlatformWebhook
 
 ## Notes for Next Session
 
-- platform#381 is M scale, Med complexity — shared ApiResult type, merge single-method @McpDomain classes
-- platform#382 is evaluation-only — hands-on LLM testing, document findings
-- #400→#403 and #401→#404 are paired: generator feature first, then consumer migration
-- AML slot clone has rebase conflicts (7 CBR files) — leave for slot 181
-- The 33 remaining @HandWrittenEndpoint resources trend toward zero as #400/#401 land (12 of 33 become generatable)
+- platform#403 (S / Low, blocked by #400 which is now done): migrate iot DeviceSseResource, life LifeEventSseResource, ops ReconciliationResource (SSE portion), openclaw ScenarioSseResource. **Caveat:** iot's DeviceSseResource has complex business logic (snapshot merging, tenancy filtering, CDI event observation) — may not fit a simple @PlatformStream pass-through. Evaluate each resource individually.
+- #401→#404 are paired: webhook generator feature first, then consumer migration
+- All repos are rebased against origin/main as of 2026-09-23
+- Platform branch is `issue-381-consolidation` (covers both #381 and #400 work)
+- New improvement issues filed: #406, #407, #408, #409 — not in the current queue, future work
 
 ## Standing Rules
 
