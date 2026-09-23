@@ -1,61 +1,66 @@
 # Handover — Slot 194
 
 ## Active Issue
-`casehubio/platform#401` — @PlatformWebhook generator support. Queue position 34/36.
+`casehubio/platform#404` — migrate webhook resources to @PlatformWebhook. Queue position 35/36.
 
 ## Context
 
-The @McpDomain migration (platform#300 epic) is nearing completion. This session completed #403 (SSE migration). Two issues remain: #401 (webhook generator feature) and #404 (webhook consumer migration).
+The @McpDomain migration (platform#300 epic) is nearly complete. This session completed #401 (@PlatformWebhook generator) and #404 (consumer migration). One issue remains: work-end.
 
 ## What Was Done
 
-### platform#403 — migrate SSE resources to @PlatformStream (closed)
+### platform#401 — @PlatformWebhook generator support (closed)
 
-Migrated 4 hand-written SSE resources across 4 repos to `@PlatformStream` methods on `@McpDomain` classes. The generator produces `@GET` + `@Produces(SERVER_SENT_EVENTS)` + `@RestStreamElementType(APPLICATION_JSON)` endpoints that delegate to the domain class methods.
+Built 8 generator improvements in a single feature:
 
-| Repo | Old Resource | New Location | Complexity |
-|---|---|---|---|
-| openclaw | `ScenarioSseResource` | `OpenClawScenarioApi.watchEvents()` | Simple — listener pattern |
-| ops | `ReconciliationResource` | `OpsReconciliationApi.watchEvents()` | Simple — old endpoint was a stub |
-| life | `LifeEventSseResource` | `LifeEventStreamApi` (new @McpDomain class, 3 endpoints) | Moderate — 3 filtered streams |
-| iot | `DeviceSseResource` | `DefaultIoTDeviceApi.streamDevices()` | Complex — snapshot merge, CDI observer, tenancy filtering |
+1. **@PlatformWebhook** annotation — POST, no GraphQL resolver, @PermitAll default, custom `consumes`
+2. **@HeaderParam** — HTTP header parameters on any operation type
+3. **@QueryParam** — explicit query parameters (required for webhooks, optional for mutations)
+4. **@ContextParam HTTP context** — httpHeaders, queryParams, requestUrl resolution keys
+5. **@PermitAll** annotation pass-through from domain methods
+6. **Response return type pass-through** — no double-wrapping
+7. **Uni\<T\> return type** — skips @RunOnVirtualThread, returns directly
+8. **@BeanParam expansion** — complex type in GET expands to individual @QueryParam
 
-Key decisions:
-- **iot typed response:** Replaced raw `Multi<String>` JSON with typed `DeviceStreamEvent(operation, data)` record
-- **iot tenancy:** Changed from injected `CurrentPrincipal` to `@ContextParam("tenancyId")` method parameter
-- **life heartbeat dropped:** Removed 30s keepalive heartbeat — RESTEasy Reactive handles SSE keepalive via `quarkus.rest.sse.keepalive-interval`
-- **life new domain:** Created `@McpDomain("life/events")` rather than adding to an existing domain — event streams are cross-cutting
-- **ops stub upgraded:** Old `/events` endpoint returned JSON metadata, not actual SSE. New method streams real reconciliation events from `ApplicationEventBroadcaster`
+Polish: smart imports (only emit used JAX-RS verbs), no duplicate imports, @NameBinding pass-through in both Jandex and RoundEnv scan paths.
 
-All 4 repos build cleanly (verified via IDE build). Docs and ARC42STORIES updated in each repo.
+76 tests pass (65 existing + 11 new). 5 commits on `issue-381-consolidation`.
+
+### platform#404 — migrate webhook resources to @PlatformWebhook (closed)
+
+Converted all 8 resources across 6 repos:
+
+| # | Repo | Resource | Annotations used | Branch |
+|---|---|---|---|---|
+| 1 | platform | CallbackDispatchResource | @PlatformWebhook + @PathParam × 2 + @HeaderParam | issue-381-consolidation |
+| 2 | platform | EngagementCallbackResource | @PlatformWebhook + @PlatformMutation + @ContextParam("httpHeaders") | issue-381-consolidation |
+| 3 | work | JiraWebhookResource | @PlatformWebhook + @QueryParam("secret") + @PathParam | issue-404-webhook-migration |
+| 4 | work | GitHubWebhookResource | @PlatformWebhook + @HeaderParam("X-Hub-Signature-256") + @PathParam | issue-404-webhook-migration |
+| 5 | work | FederationEventResource | @PlatformWebhook + @HeaderParam × 2 + CloudEvents consumes | issue-404-webhook-migration |
+| 6 | devtown | GitHubWebhookResource | @PlatformWebhook + @HeaderParam × 3 | issue-204-mcpdomain-spi |
+| 7 | connectors | WebhookRouter | @PlatformWebhook + @PlatformQuery + @ContextParam(HTTP) | issue-100-mcpdomain-full-parity |
+| 8 | qhorus | WebhookRegistryResource | @PlatformMutation + @PlatformQuery (CRUD, not webhook) | issue-42-ux-overhaul |
+
+All platform tests pass (callback-client: 13, notification-dispatch: 11, graphql-generator: 76).
 
 ## Uncommitted Changes Across Repos
 
 All repos clean. Commits on branches:
-- **openclaw** (`issue-77-mcpdomain-spi`): 1 commit — SSE migration
-- **ops** (`issue-90-mcpdomain-spi`): 1 commit — SSE migration
-- **life** (`issue-118-mcpdomain-spi`): 1 commit — SSE migration
-- **iot** (`main`): 1 commit — SSE migration
+- **platform** (`issue-381-consolidation`): 5 commits — generator + 2 migrations
+- **work** (`issue-404-webhook-migration`): 1 commit — 3 webhook migrations
+- **devtown** (`issue-204-mcpdomain-spi`): 1 commit — GitHub webhook migration
+- **connectors** (`issue-100-mcpdomain-full-parity`): 1 commit — WebhookRouter migration
+- **qhorus** (`issue-42-ux-overhaul`): 1 commit — WebhookRegistryResource migration
 
 ## Queue (platform#300 children)
 
-1. ~~**platform#403**~~ done
-2. **platform#401** — @PlatformWebhook generator support ← active
-3. **platform#404** — migrate webhook resources to @PlatformWebhook
+1. ~~**platform#401**~~ done
+2. ~~**platform#404**~~ done
+3. **work-end** — close this branch
 
 ## Notes for Next Session
 
-- #401 is a platform generator feature (new annotation + APT code), not a consumer migration — needs brainstorming and TDD
-- #401 and #404 are paired: generator feature first, then consumer migration
-- The `@PlatformStream` implementation in `GraphQLResolverProcessor` (lines ~1020-1080) is the template for `@PlatformWebhook` — check how STREAM is handled and follow the same pattern for WEBHOOK
-- Platform branch is `issue-381-consolidation` (accumulated work from #381, #382, #400)
-- All repos have the platform SNAPSHOT in local .m2 cache
-- New improvement issues filed previously (#406-#409) are not in the current queue
-
-## Standing Rules
-
-- **Type safety is non-negotiable** — no `Object` returns, no raw types, proper generics always
-- Inject services directly — never delegate to REST resources via `.getEntity()`
-- `List<T>`, `Map<K,V>`, `Optional<T>` — always parameterised
-- `Map<String,Object>` → create a typed record when the structure is known
-- **Delete only what the generator fully replaces** — method-by-method verification before deletion
+- Both #401 and #404 need GitHub issues closed
+- The slot's local .m2 has the updated platform-api and graphql-generator installed
+- Consumer repos need their branches merged via work-end
+- The @McpDomain generator is now feature-complete: queries, mutations, streams, webhooks, @BeanParam, Uni\<T\>, @ContextParam HTTP, annotation pass-through
