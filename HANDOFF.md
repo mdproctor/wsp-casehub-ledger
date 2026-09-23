@@ -1,76 +1,54 @@
 # Handover — Slot 194
 
 ## Active Issue
-Queue complete — all 41/41 issues done. platform#300 epic fully delivered.
+`casehubio/platform#406` — casehub_search keyword tool. Queue position 43/45.
 
 ## Context
 
-The @McpDomain migration (platform#300 epic) is fully complete — all 41 issues delivered across 17 repos. This session completed the final 5 polish issues (#414-#418) filed in the previous session.
+The @McpDomain migration (platform#300 epic) is nearly complete — 43/45 issues done. This session completed 7 issues: the 5 generator polish items (#414-#418), plus 2 additional fixes (#408, #409) discovered during epic audit. Also verified and closed 10 superseded original issues (#301-#310, #304, #305).
 
 ## What Was Done This Session
 
 ### platform#414 — generator polish (closed)
-
-Three fixes in `GraphQLResolverProcessor`:
-1. **Response returns skipped in GraphQL** — methods returning `jakarta.ws.rs.core.Response` excluded from GraphQL resolver (invalid type in GraphQL)
-2. **HTTP context params skipped in GraphQL** — methods using `httpHeaders`/`queryParams`/`requestUrl` excluded (no HTTP context in GraphQL resolvers)
-3. **CurrentPrincipal injection fixed** — new `hasPrincipalContextParams()` only injects CurrentPrincipal for `tenancyId`/`actorId`, not HTTP context params. Applies to both REST and GraphQL.
-
-Refactored: `hasContextParams()` → `hasPrincipalContextParams()` + `usesHttpContext()` helper. `hasHttpContextParams()` delegates to `usesHttpContext()`.
-3 new tests, 79→79 pass. Commit: 9f9b4126.
+Three fixes in `GraphQLResolverProcessor`: Response returns skipped in GraphQL, HTTP context params skipped in GraphQL, CurrentPrincipal injection fixed with `hasPrincipalContextParams()`. 3 new tests. Commit: 9f9b4126.
 
 ### platform#415 — generator test coverage (closed)
-
-4 new compile-testing tests:
-- `@NameBinding` annotation pass-through
-- `@ContextParam("queryParams")` UriInfo resolution
-- `@ContextParam("requestUrl")` URI string resolution
-- `@PlatformWebhook` multi-value `consumes` array
-
-79→83 pass. Commit: 9a56181e.
+4 new compile-testing tests: @NameBinding, @ContextParam queryParams/requestUrl, multi-value consumes. Commit: 9a56181e.
 
 ### platform#416 — BeanParam records-only (closed)
-
-`resolveBeanFields()` now emits a compile-time error when a non-record class is used as a @BeanParam query parameter. Covers both Jandex and APT paths.
-1 new test, 83→84 pass. Commit: 80b9e752.
+Compile-time error for non-record @BeanParam types. Commit: 80b9e752.
 
 ### platform#417 — consumer test verification (closed)
-
-Ran test suites across 5 consumer repos:
-
-| Repo | Module | Tests | Result |
-|---|---|---|---|
-| work | federation | FederationEventRouterTest | 6/6 pass |
-| devtown | github | GitHubWebhookResourceTest | 29/29 pass |
-| qhorus | webhook-observer | WebhookRegistryTest | 9/9 pass (fixed @RestMethod) |
-| connectors | webhook | WebhookRouterTest | CDI dep (pre-existing) |
-| work | issue-tracker | 3 webhook tests | CDI deps (skipped by design) |
-
-Qhorus fix: `@RestMethod("DELETE")` → `@RestMethod(HttpMethod.DELETE)` (d3066c43).
-Connectors: #414 fix resolved CurrentPrincipal injection, but InboundConnectorService CDI dep is pre-existing.
+44 tests pass across 3 repos (federation 6/6, devtown 29/29, qhorus 9/9). Qhorus @RestMethod fix (d3066c43). Connectors CDI dep is pre-existing.
 
 ### platform#418 — ARC42STORIES generator section (closed)
+Chapter C24 + Layer L14 for @McpDomain generator architecture. Commit: 17d15f2b.
 
-Added to ARC42STORIES.MD:
-- Chapter C24 — @McpDomain Generator (Journey J9)
-- Layer L14 — @McpDomain Generator architecture
-- Updated Building Block View, Chapter Index flowchart, and style entries
+### platform#408 — empty summary validation (closed)
+Compile-time error for empty @PlatformQuery/@PlatformMutation descriptions. Validates at generation time (after domain filter) to avoid breaking classpath dependencies. Commit: 7f7b010a.
 
-Covers operation types, 14 annotations, dual-scan architecture, smart features, gotchas.
-Commit: 17d15f2b.
+### platform#409 — generic type params in model (closed)
+`GraphQLModelScanner.mapGenericTypeName()` resolves ParameterizedType — `List<String>` instead of `List`. Commit: f0ea5803.
+
+### Epic audit — 10 superseded issues closed
+Verified #301-#310 and #304-#305 against current code. All implemented during consolidation work. Closed with verification notes.
 
 ## Uncommitted Changes
 
 All repos clean. All changes committed on their respective branches.
 
-## Queue
+## Queue (remaining)
 
-All 41/41 issues complete. Epic platform#300 fully delivered.
+| # | Issue | What | Scale |
+|---|---|---|---|
+| 43 | platform#406 | casehub_search — keyword search across MCP operations | S |
+| 44 | platform#407 | app-level grouping in casehub_model discovery | M |
 
 ## Notes for Next Session
 
 - Platform branch `issue-381-consolidation` has accumulated work from #381 through #418 — will need squash/review at work-end
-- The local .m2 (`/Users/mdproctor/claude/casehub/slots/194/.m2`) has the updated graphql-generator installed
-- The .plan queue items #414-#418 aren't checked off (inline `← active` marker was never set on append) — GitHub issues are all closed
-- Ledger has 2 unpushed commits for #210 on main
-- Connectors webhook module can't run QuarkusTests in isolation (missing InboundConnectorService CDI bean) — separate concern from the migration
+- Another session overwrote platform-api in global .m2 from main — reinstalled from this branch. May need reinstalling if another session runs `mvn install` on main
+- #406 and #407 are MCP discovery improvements (different module: mcp/), not generator work
+- #406 adds a `casehub_search` tool — in-memory substring search across all registered operations
+- #407 adds app-level grouping — `@McpDomain` gets an `app` attribute, `casehub_model` gets an `app` parameter
+- Epic platform#300 is still OPEN — close after #406 and #407 are done
