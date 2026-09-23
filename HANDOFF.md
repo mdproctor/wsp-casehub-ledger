@@ -1,74 +1,56 @@
 # Handover — Slot 194
 
 ## Active Issue
-`casehubio/platform#403` — migrate 4 SSE resources to @PlatformStream. Queue position 33/36.
+`casehubio/platform#401` — @PlatformWebhook generator support. Queue position 34/36.
 
 ## Context
 
-The @McpDomain migration (platform#300 epic) is nearing completion. This session completed three issues: consolidation (#381), LLM usability evaluation (#382), and @PlatformStream runtime discovery (#400). Three issues remain in the queue.
+The @McpDomain migration (platform#300 epic) is nearing completion. This session completed #403 (SSE migration). Two issues remain: #401 (webhook generator feature) and #404 (webhook consumer migration).
 
 ## What Was Done
 
-### platform#381 — Consolidation: shared ApiResult, merge single-method classes (closed)
+### platform#403 — migrate SSE resources to @PlatformStream (closed)
 
-- Created `ApiResult(boolean ok, String id, String detail)` in platform-api — shared result record
-- Merged `ClaudonyActionApi` (1 method) into `ClaudonyCaseApi` at `/actions` sub-path
-- Merged `FsiAuditApi` (1 method) into `FsiComplianceApi` at `/audit/orders/{orderId}`
-- Extracted `PostMessageResult` from chat-app `ChatMessageApi` to standalone file
-- Replaced `MoveChannelResult` in chat-app with `ApiResult`
-- Replaced `WorkitemResult` and `CommitmentResult` in openclaw with `ApiResult`
-- Net: 2 @McpDomain classes eliminated, 2 per-repo result records consolidated
+Migrated 4 hand-written SSE resources across 4 repos to `@PlatformStream` methods on `@McpDomain` classes. The generator produces `@GET` + `@Produces(SERVER_SENT_EVENTS)` + `@RestStreamElementType(APPLICATION_JSON)` endpoints that delegate to the domain class methods.
 
-### platform#382 — Eval: @McpDomain real-world LLM usability (closed)
+| Repo | Old Resource | New Location | Complexity |
+|---|---|---|---|
+| openclaw | `ScenarioSseResource` | `OpenClawScenarioApi.watchEvents()` | Simple — listener pattern |
+| ops | `ReconciliationResource` | `OpsReconciliationApi.watchEvents()` | Simple — old endpoint was a stub |
+| life | `LifeEventSseResource` | `LifeEventStreamApi` (new @McpDomain class, 3 endpoints) | Moderate — 3 filtered streams |
+| iot | `DeviceSseResource` | `DefaultIoTDeviceApi.streamDevices()` | Complex — snapshot merge, CDI observer, tenancy filtering |
 
-Structural evaluation of the full CaseHub MCP surface: 142 domains, 607 operations across 16 repos.
+Key decisions:
+- **iot typed response:** Replaced raw `Multi<String>` JSON with typed `DeviceStreamEvent(operation, data)` record
+- **iot tenancy:** Changed from injected `CurrentPrincipal` to `@ContextParam("tenancyId")` method parameter
+- **life heartbeat dropped:** Removed 30s keepalive heartbeat — RESTEasy Reactive handles SSE keepalive via `quarkus.rest.sse.keepalive-interval`
+- **life new domain:** Created `@McpDomain("life/events")` rather than adding to an existing domain — event streams are cross-cutting
+- **ops stub upgraded:** Old `/events` endpoint returned JSON metadata, not actual SSE. New method streams real reconciliation events from `ApplicationEventBroadcaster`
 
-Key findings:
-- Hierarchy works for single-app, breaks at org scale (142 domains in flat list)
-- Discovery is browse-only — keyword search is highest-impact improvement
-- Return type erasure (List not List<LedgerEntry>) hampers LLM understanding
-
-Filed 4 improvement issues:
-- platform#406 — `casehub_search` tool (keyword search across operations)
-- platform#407 — app-level grouping in `casehub_model`
-- platform#408 — build-time summary validation
-- platform#409 — return type generics in discovery output
-
-Evaluation spec: `specs/eval-mcpdomain-llm-usability.md`
-
-### platform#400 — @PlatformStream generator support (closed)
-
-Found that `@PlatformStream` annotation and both APT generators (Quarkus + Spring) already existed. The gap was runtime MCP discovery:
-- Added `STREAM` to `OperationDescriptor.OperationType`
-- `GraphQLModelScanner` now scans `@PlatformStream` methods
-- `DomainContentFormatter` shows streams in `casehub_model` output
-- Stream operations excluded from `casehub_action`/`casehub_activate` (Multi<T> can't serialize)
+All 4 repos build cleanly (verified via IDE build). Docs and ARC42STORIES updated in each repo.
 
 ## Uncommitted Changes Across Repos
 
-All repos are clean. Commits on feature branches:
-- **platform** (`issue-381-consolidation`): ApiResult + stream discovery (2 commits)
-- **claudony** (`issue-204-mcpdomain-spi`): merged ActionApi into CaseApi
-- **fsitrading** (`issue-47-mcpdomain-spi`): merged AuditApi into ComplianceApi
-- **chat-app** (`issue-42-ux-overhaul`): extracted PostMessageResult, replaced MoveChannelResult
-- **openclaw** (`issue-77-mcpdomain-spi`): replaced WorkitemResult/CommitmentResult with ApiResult
+All repos clean. Commits on branches:
+- **openclaw** (`issue-77-mcpdomain-spi`): 1 commit — SSE migration
+- **ops** (`issue-90-mcpdomain-spi`): 1 commit — SSE migration
+- **life** (`issue-118-mcpdomain-spi`): 1 commit — SSE migration
+- **iot** (`main`): 1 commit — SSE migration
 
 ## Queue (platform#300 children)
 
-1. ~~**platform#381**~~ done
-2. ~~**platform#382**~~ done
-3. ~~**platform#400**~~ done
-4. **platform#403** — migrate 4 SSE resources to @PlatformStream ← active
-5. **platform#401** — @PlatformWebhook generator support
-6. **platform#404** — migrate webhook resources to @PlatformWebhook
+1. ~~**platform#403**~~ done
+2. **platform#401** — @PlatformWebhook generator support ← active
+3. **platform#404** — migrate webhook resources to @PlatformWebhook
 
 ## Notes for Next Session
 
-- platform#403 (S / Low, blocked by #400 which is now done): migrate iot DeviceSseResource, life LifeEventSseResource, ops ReconciliationResource (SSE portion), openclaw ScenarioSseResource. **Caveat:** iot's DeviceSseResource has complex business logic (snapshot merging, tenancy filtering, CDI event observation) — may not fit a simple @PlatformStream pass-through. Evaluate each resource individually.
-- #401→#404 are paired: webhook generator feature first, then consumer migration
-- All repos are rebased against origin/main as of 2026-09-23
-- Platform branch is `issue-381-consolidation` (covers both #381 and #400 work)
-- New improvement issues filed: #406, #407, #408, #409 — not in the current queue, future work
+- #401 is a platform generator feature (new annotation + APT code), not a consumer migration — needs brainstorming and TDD
+- #401 and #404 are paired: generator feature first, then consumer migration
+- The `@PlatformStream` implementation in `GraphQLResolverProcessor` (lines ~1020-1080) is the template for `@PlatformWebhook` — check how STREAM is handled and follow the same pattern for WEBHOOK
+- Platform branch is `issue-381-consolidation` (accumulated work from #381, #382, #400)
+- All repos have the platform SNAPSHOT in local .m2 cache
+- New improvement issues filed previously (#406-#409) are not in the current queue
 
 ## Standing Rules
 
