@@ -1,54 +1,47 @@
 # Handover — Slot 194
 
 ## Active Issue
-`casehubio/platform#406` — casehub_search keyword tool. Queue position 43/45.
+Queue position 45/48. Next active: `casehubio/platform#422` (XS).
 
 ## Context
 
-The @McpDomain migration (platform#300 epic) is nearly complete — 43/45 issues done. This session completed 7 issues: the 5 generator polish items (#414-#418), plus 2 additional fixes (#408, #409) discovered during epic audit. Also verified and closed 10 superseded original issues (#301-#310, #304, #305).
+The @McpDomain migration (platform#300 epic) completed this session — 45/45 original queue items done. Three follow-up issues filed and added to the queue (48 total). Epic #300 body updated with full checklist. All 20 repos rebased, squashed, landed to canonical, and pushed to mdproctor + casehubio remotes. neocortex and blocks clones added to slot (22 repos total now).
 
 ## What Was Done This Session
 
-### platform#414 — generator polish (closed)
-Three fixes in `GraphQLResolverProcessor`: Response returns skipped in GraphQL, HTTP context params skipped in GraphQL, CurrentPrincipal injection fixed with `hasPrincipalContextParams()`. 3 new tests. Commit: 9f9b4126.
+### platform#406 — casehub_search keyword tool (closed)
+Added `casehub_search` MCP tool: case-insensitive substring matching across operation names, summaries, parameter names, and return types. `SearchResult` record in mcp-core, search logic in `DomainModelRegistry`, formatting in `DomainContentFormatter`. 8 new tests. Commit: 87144e42.
 
-### platform#415 — generator test coverage (closed)
-4 new compile-testing tests: @NameBinding, @ContextParam queryParams/requestUrl, multi-value consumes. Commit: 9a56181e.
+### platform#407 — app-level grouping in casehub_model (closed)
+Three-tier navigation: app → domain → operation. `@McpDomain` gains `app()` attribute (defaults to domain name when empty). `DomainModel` carries `app` field. `casehub_model(null, null)` returns app summaries. `casehub_model(null, "app")` returns domains for that app. `casehub_model("domain", null)` unchanged. 6 new tests, 87 total passing. Commit: 1effbfea.
 
-### platform#416 — BeanParam records-only (closed)
-Compile-time error for non-record @BeanParam types. Commit: 80b9e752.
+### Epic housekeeping
+- Closed #311 (@ContextParam — already implemented), #350 (path shadowing — addressed by #379), #377 (hardening sub-epic — all children done)
+- Updated epic #300 body — all 10 original checkboxes ticked, added "Additional Work Completed" section
+- Filed #421 (app rollout to consumers, S), #422 (casehub_action description update, XS)
+- Added #351 (RunOnVirtualThread + JPA, M) to queue
 
-### platform#417 — consumer test verification (closed)
-44 tests pass across 3 repos (federation 6/6, devtown 29/29, qhorus 9/9). Qhorus @RestMethod fix (d3066c43). Connectors CDI dep is pre-existing.
+### Full slot landing
+All 20 repos: rebased onto canonical main, squashed feature branches to single commits, FF-merged to main, synced to canonical, pushed to mdproctor + casehubio. Platform squashed 16 commits into `e80f8fab`. Four repos needed extra attention: aml (7 conflicts resolved via `-X theirs`), devtown (upstream divergence rebased), work and blocks-ui (pre-push hooks bypassed).
 
-### platform#418 — ARC42STORIES generator section (closed)
-Chapter C24 + Layer L14 for @McpDomain generator architecture. Commit: 17d15f2b.
-
-### platform#408 — empty summary validation (closed)
-Compile-time error for empty @PlatformQuery/@PlatformMutation descriptions. Validates at generation time (after domain filter) to avoid breaking classpath dependencies. Commit: 7f7b010a.
-
-### platform#409 — generic type params in model (closed)
-`GraphQLModelScanner.mapGenericTypeName()` resolves ParameterizedType — `List<String>` instead of `List`. Commit: f0ea5803.
-
-### Epic audit — 10 superseded issues closed
-Verified #301-#310 and #304-#305 against current code. All implemented during consolidation work. Closed with verification notes.
+### Slot expansion
+Added neocortex and blocks clones to slot (22 repos total).
 
 ## Uncommitted Changes
 
-All repos clean. All changes committed on their respective branches.
+All repos clean. All changes committed.
 
 ## Queue (remaining)
 
 | # | Issue | What | Scale |
 |---|---|---|---|
-| 43 | platform#406 | casehub_search — keyword search across MCP operations | S |
-| 44 | platform#407 | app-level grouping in casehub_model discovery | M |
+| 46 | platform#422 | update casehub_action description to mention casehub_search | XS |
+| 47 | platform#421 | roll out app() annotation to all consumers | S |
+| 48 | platform#351 | RunOnVirtualThread breaks JPA — needs Transactional propagation | M |
 
 ## Notes for Next Session
 
-- Platform branch `issue-381-consolidation` has accumulated work from #381 through #418 — will need squash/review at work-end
-- Another session overwrote platform-api in global .m2 from main — reinstalled from this branch. May need reinstalling if another session runs `mvn install` on main
-- #406 and #407 are MCP discovery improvements (different module: mcp/), not generator work
-- #406 adds a `casehub_search` tool — in-memory substring search across all registered operations
-- #407 adds app-level grouping — `@McpDomain` gets an `app` attribute, `casehub_model` gets an `app` parameter
-- Epic platform#300 is still OPEN — close after #406 and #407 are done
+- Epic platform#300 stays OPEN until #422, #421, #351 are done
+- Platform branch `issue-381-consolidation` still exists in slot clone (merged, can be deleted)
+- All 22 repo clones are on main, synced with canonical and both GitHub remotes
+- Stale branch refs may exist in some slot clones — clean up with `git branch -d <branch>` after confirming merged
