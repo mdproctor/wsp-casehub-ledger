@@ -2,18 +2,18 @@
 
 ## What Was Done
 
-Three commits on `mdproctor/ledger` main for ledger#214:
+Four commits on ledger main for ledger#214:
 
-1. `ba1193c` — fix stale constructor calls in ComplianceReportServiceCore (9-param ComplianceReport, 11-param DecisionRecord), add missing `reportForTenancy()` method, fix stale imports for LedgerMerkleFrontierRepository in runtime and persistence-memory, fix JpaComplianceSupplement import in test
-2. `0a9f9e3` — fix REST API test constructors (DefaultLedgerEntryApiTest, DefaultLedgerTrustApiTest) for constructor injection refactoring
-3. `e500cf9` — exclude signing-spring and spring-integration-test from reactor (depend on vault-transit/aws-kms/gcp-kms/azure-keyvault modules not yet created)
+1. `ba1193c` — fix stale constructor calls in ComplianceReportServiceCore, add reportForTenancy(), fix stale LedgerMerkleFrontierRepository imports
+2. `0a9f9e3` — fix REST API test constructors for constructor injection
+3. `e500cf9` — exclude signing-spring from reactor (depends on unimplemented modules)
+4. `dd0e7ad` — compute ComplianceSummary in reportFor* methods (was null, tests expected non-null)
 
 ## CI Status
 
-Waiting for ledger CI run on HEAD (e500cf9) to pass and deploy SNAPSHOT to GitHub Packages. Two earlier runs in progress will fail (don't have all fixes).
+Run 36499706727 on casehubio/ledger in progress. Once it passes, SNAPSHOT will be published to GitHub Packages. Qhorus CI will then resolve the updated version.
 
 ## Remaining
 
-- `rest/` module REST test fixes are included — those tests should pass
 - `signing-spring` excluded from reactor until the 4 signing backend modules are created
-- Once CI deploys, qhorus CI should go green automatically
+- Once SNAPSHOT is published, qhorus CI should go green without any qhorus code changes
