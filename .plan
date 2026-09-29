@@ -1,0 +1,15 @@
+# Work Plan — issue-215-stale-jandex-index
+
+## State
+branch: issue-215-stale-jandex-index
+state: scaffolded
+project-sha: 
+date: 
+issue-repo: casehubio/ledger
+covers: 215
+design-repo: 
+design-section-hashes: 
+flyway-next-v: 
+
+## Queue
+- [ ] casehubio/ledger#215 — Issue #215 ← active
