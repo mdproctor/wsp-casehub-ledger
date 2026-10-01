@@ -1,0 +1,15 @@
+# Work Plan — issue-209-snapshot-path-mapping
+
+## State
+branch: issue-209-snapshot-path-mapping
+state: scaffolded
+project-sha: 
+date: 
+issue-repo: casehubio/ledger
+covers: 209
+design-repo: 
+design-section-hashes: 
+flyway-next-v: 
+
+## Queue
+- [ ] casehubio/ledger#209 — Issue #209 ← active
