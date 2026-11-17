@@ -1,0 +1,15 @@
+# Work Plan —
+
+## State
+branch: issue-237-defaultbean-identity-beans
+status: active
+project-sha: 
+date: 
+issue-repo: casehubio/ledger
+covers: 237
+design-repo: 
+design-section-hashes: 
+flyway-next-v: 
+
+## Queue
+- [ ] casehubio/ledger#237 — Issue #237 ← active
