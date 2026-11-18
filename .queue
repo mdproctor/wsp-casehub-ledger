@@ -1,4 +1,4 @@
-- [x] casehubio/ledger#237 — Issue #237
+# Work Plan —
 
 ## State
 branch: issue-237-defaultbean-identity-beans
@@ -10,3 +10,7 @@ date:
 design-repo: 
 design-section-hashes: 
 flyway-next-v: 
+
+## Queue
+- [x] casehubio/ledger#237 — Issue #237
+- [ ] casehubio/ledger#231 — feat: org-scoped attestation weighting
