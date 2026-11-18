@@ -16,4 +16,4 @@ flyway-next-v:
 - [x] casehubio/ledger#231 — feat: org-scoped attestation weighting
 - [x] casehubio/ledger#240 — ADR for AttestationRelevanceFactor SPI
 - [x] casehubio/ledger#241 — ARC42 updates for attestation relevance
-- [ ] casehubio/ledger#242 — Move LedgerEntryEnricher to api
+- [x] casehubio/ledger#242 — Move LedgerEntryEnricher to api
