@@ -1,10 +1,10 @@
 # Work Plan —
 
 ## State
-branch: issue-231-org-scoped-attestation-weighting
+branch: 
 issue-repo: casehubio/ledger
 status: active
-covers: 231
+covers: 240
 project-sha: 
 date: 
 design-repo: 
@@ -13,7 +13,7 @@ flyway-next-v:
 
 ## Queue
 - [x] casehubio/ledger#237 — Issue #237
-- [ ] casehubio/ledger#231 — feat: org-scoped attestation weighting
+- [x] casehubio/ledger#231 — feat: org-scoped attestation weighting
 - [ ] casehubio/ledger#240 — ADR for AttestationRelevanceFactor SPI
 - [ ] casehubio/ledger#241 — ARC42 updates for attestation relevance
 - [ ] casehubio/ledger#242 — Move LedgerEntryEnricher to api
