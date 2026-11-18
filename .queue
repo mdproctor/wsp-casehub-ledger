@@ -4,7 +4,7 @@
 branch: issue-240-adr-attestation-relevance-factor
 issue-repo: casehubio/ledger
 status: active
-covers: 240
+covers: 242
 project-sha: 
 date: 
 design-repo: 
@@ -15,5 +15,5 @@ flyway-next-v:
 - [x] casehubio/ledger#237 — Issue #237
 - [x] casehubio/ledger#231 — feat: org-scoped attestation weighting
 - [x] casehubio/ledger#240 — ADR for AttestationRelevanceFactor SPI
-- [ ] casehubio/ledger#241 — ARC42 updates for attestation relevance
+- [x] casehubio/ledger#241 — ARC42 updates for attestation relevance
 - [ ] casehubio/ledger#242 — Move LedgerEntryEnricher to api
