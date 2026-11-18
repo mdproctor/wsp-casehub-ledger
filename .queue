@@ -17,3 +17,6 @@ flyway-next-v:
 - [x] casehubio/ledger#240 — ADR for AttestationRelevanceFactor SPI
 - [x] casehubio/ledger#241 — ARC42 updates for attestation relevance
 - [x] casehubio/ledger#242 — Move LedgerEntryEnricher to api
+- [ ] casehubio/ledger#243 — fix: runtime test bootstrap — AuditedInterceptor CDI binding
+- [ ] casehubio/ledger#244 — docs: update ADR 0005 — enricher moved to api
+- [ ] casehubio/ledger#245 — docs: contributor-guide enricher pipeline section
