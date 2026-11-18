@@ -2,6 +2,7 @@
 
 | File | Date | Title |
 |------|------|-------|
+| [2026-11-18-mdp02-the-interface-that-lived-next-door.md](2026-11-18-mdp02-the-interface-that-lived-next-door.md) | 2026-11-18 | LedgerEntryEnricher moved from ledger-core to api — sibling SPI revealed wrong module placement; enricher SPIs belong where consumers can see them |
 | [2026-06-18-mdp01-the-race-that-wasnt.md](2026-06-18-mdp01-the-race-that-wasnt.md) | 2026-06-18 | ON CONFLICT DO NOTHING concurrency analysis; H2 2.4.240 rejects named-target DO UPDATE; three-way dialect enum |
 | [2026-06-28-mdp01-the-channel-you-dont-fire.md](2026-06-28-mdp01-the-channel-you-dont-fire.md) | 2026-06-28 | CDI dual-channel normalisation — latent bug in reactive key rotation cache invalidation; fireAsync() await coupling SUSPECT verdict to observer delivery; every producer fires both channels |
 | [2026-06-18-mdp02-the-query-at-hour-one.md](2026-06-18-mdp02-the-query-at-hour-one.md) | 2026-06-18 | Hibernate 6 HAVING arithmetic dialect gap (H2 silent, PostgreSQL rejects); @NamedQuery as startup validation; CDI self-injection for per-check TX isolation |
