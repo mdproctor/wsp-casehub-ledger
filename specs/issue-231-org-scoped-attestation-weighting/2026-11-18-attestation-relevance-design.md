@@ -110,8 +110,9 @@ public record RelevanceAssessment(double weight, String reason) {
  * <p>Each factor computes one dimension of attestation relevance (org proximity,
  * capability overlap, collaboration recency, etc.). The ledger aggregates all
  * discovered factors via {@code Instance<AttestationRelevanceFactor>}, computes
- * the product of their weights (with a global floor), and normalises per actor
- * to preserve evidence mass (see {@link AttestationRelevancePolicy}).
+ * the product of their weights (floored at {@code casehub.ledger.trust-score.relevance.min-weight},
+ * default 0.5, to prevent compounding from driving weights to near-zero), and
+ * normalises per actor to preserve evidence mass (see {@link AttestationRelevancePolicy}).
  *
  * <p>Implementations must be CDI beans ({@code @ApplicationScoped}).
  */
@@ -325,6 +326,15 @@ casehub.eidos.trust.relevance.weights=1.0,1.0,0.7,0.65,0.6
 ```
 
 Validated at startup: non-empty, all values in [0.0, 1.0]. Spring parity via `@ConfigurationProperties`.
+
+### Ledger Composition Config
+
+```properties
+# Floor for the product of all relevance factors (prevents compounding to near-zero)
+casehub.ledger.trust-score.relevance.min-weight=0.5
+```
+
+This is the only relevance config owned by ledger. It governs the composition pipeline, not any specific factor.
 
 ## Schema
 
