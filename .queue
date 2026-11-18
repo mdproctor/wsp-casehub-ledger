@@ -1,7 +1,7 @@
 # Work Plan —
 
 ## State
-branch: 
+branch: issue-240-adr-attestation-relevance-factor
 issue-repo: casehubio/ledger
 status: active
 covers: 240
