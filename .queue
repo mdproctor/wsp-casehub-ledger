@@ -1,10 +1,10 @@
 # Work Plan —
 
 ## State
-branch: issue-237-defaultbean-identity-beans
+branch: issue-231-org-scoped-attestation-weighting
 issue-repo: casehubio/ledger
-status: drained
-covers: 237
+status: active
+covers: 231
 project-sha: 
 date: 
 design-repo: 
