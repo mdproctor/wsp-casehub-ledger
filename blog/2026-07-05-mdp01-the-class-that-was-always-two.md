@@ -1,3 +1,12 @@
+---
+layout: post
+title: "The class that was always two"
+date: 2026-07-05
+entry_type: note
+subtype: diary
+projects: [casehubio/ledger]
+---
+
 # The class that was always two
 
 `LedgerEntry` lived in two places. The api module had one — a plain abstract
