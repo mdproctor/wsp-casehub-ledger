@@ -1138,7 +1138,7 @@ Refs #231"
 - [2026-11-18-attestation-relevance-design.md](../specs/issue-231-org-scoped-attestation-weighting/2026-11-18-attestation-relevance-design.md) — design spec this plan implements
 - `api/src/main/java/io/casehub/ledger/api/model/LedgerAttestation.java` — attestation model (add relevanceSnapshot field)
 - `api/src/main/java/io/casehub/ledger/api/spi/AttestorCredibilityPolicy.java` — SPI pattern precedent
-- `ledger-core/src/main/java/io/casehub/ledger/core/enricher/LedgerEntryEnricher.java` — enricher SPI pattern
+- `../../api/src/main/java/io/casehub/ledger/api/spi/LedgerEntryEnricher.java` — enricher SPI pattern
 - `ledger-core/src/main/java/io/casehub/ledger/core/enricher/EnricherPipelineCore.java` — pipeline core pattern
 - `runtime/src/main/java/io/casehub/ledger/runtime/service/LedgerEnricherPipeline.java` — CDI pipeline pattern
 - `ledger-core/src/main/java/io/casehub/ledger/core/trust/TrustScoreComputer.java` — weight chain
