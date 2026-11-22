@@ -1,4 +1,20 @@
-# Work Plan —
+- [x] casehubio/ledger#237 — Issue #237
+- [x] casehubio/ledger#231 — feat: org-scoped attestation weighting
+- [x] casehubio/ledger#240 — ADR for AttestationRelevanceFactor SPI
+- [x] casehubio/ledger#241 — ARC42 updates for attestation relevance
+- [x] casehubio/ledger#242 — Move LedgerEntryEnricher to api
+- [x] casehubio/ledger#243 — fix: runtime test bootstrap — AuditedInterceptor CDI binding
+- [x] casehubio/ledger#244 — docs: update ADR 0005 — enricher moved to api
+- [x] casehubio/ledger#245 — docs: contributor-guide enricher pipeline section
+- [x] casehubio/ledger#238 — apply relevance weighting to EigenTrust edge weights
+- [x] casehubio/ledger#239 — independence-aware relevance factor — anti-collusion cap
+  - [x] Batch 1: Integration Tests
+    - [x] Task 1: TrustScoreCalculator relevance integration test
+  - [x] Batch 2: Documentation
+    - [x] Task 2: Update ARC42 ADR 0018 contributor guide CLAUDE.md
+- [ ] casehubio/ledger#246 — fix: EigenTrust relevance snapshot deserialization gap        ← active
+- [ ] casehubio/ledger#247 — refactor: extract EigenTrust AttestationRelevanceContext construction
+- [ ] casehubio/ledger#248 — test: integration test for EigenTrust weighted pipeline
 
 ## State
 branch: 
@@ -10,22 +26,3 @@ date:
 design-repo: 
 design-section-hashes: 
 flyway-next-v: 
-
-## Queue
-- [x] casehubio/ledger#237 — Issue #237
-- [x] casehubio/ledger#231 — feat: org-scoped attestation weighting
-- [x] casehubio/ledger#240 — ADR for AttestationRelevanceFactor SPI
-- [x] casehubio/ledger#241 — ARC42 updates for attestation relevance
-- [x] casehubio/ledger#242 — Move LedgerEntryEnricher to api
-- [x] casehubio/ledger#243 — fix: runtime test bootstrap — AuditedInterceptor CDI binding
-- [x] casehubio/ledger#244 — docs: update ADR 0005 — enricher moved to api
-- [x] casehubio/ledger#245 — docs: contributor-guide enricher pipeline section
-- [x] casehubio/ledger#238 — apply relevance weighting to EigenTrust edge weights
-- [ ] casehubio/ledger#239 — independence-aware relevance factor — anti-collusion cap ← done on issue-239-independence-relevance-factor
-  - [x] Batch 1: Integration Tests
-    - [x] Task 1: TrustScoreCalculator relevance integration test
-  - [x] Batch 2: Documentation
-    - [x] Task 2: Update ARC42 ADR 0018 contributor guide CLAUDE.md
-- [ ] casehubio/ledger#246 — fix: EigenTrust relevance snapshot deserialization gap ← active
-- [ ] casehubio/ledger#247 — refactor: extract EigenTrust AttestationRelevanceContext construction
-- [ ] casehubio/ledger#248 — test: integration test for EigenTrust weighted pipeline
