@@ -1,3 +1,17 @@
+# Work Plan —
+
+## State
+branch: 
+issue-repo: casehubio/ledger
+status: active
+covers: 
+project-sha: 
+date: 
+design-repo: 
+design-section-hashes: 
+flyway-next-v: 
+
+## Queue
 - [x] casehubio/ledger#237 — Issue #237
 - [x] casehubio/ledger#231 — feat: org-scoped attestation weighting
 - [x] casehubio/ledger#240 — ADR for AttestationRelevanceFactor SPI
@@ -8,21 +22,9 @@
 - [x] casehubio/ledger#245 — docs: contributor-guide enricher pipeline section
 - [x] casehubio/ledger#238 — apply relevance weighting to EigenTrust edge weights
 - [x] casehubio/ledger#239 — independence-aware relevance factor — anti-collusion cap
-  - [x] Batch 1: Integration Tests
-    - [x] Task 1: TrustScoreCalculator relevance integration test
-  - [x] Batch 2: Documentation
-    - [x] Task 2: Update ARC42 ADR 0018 contributor guide CLAUDE.md
-- [ ] casehubio/ledger#246 — fix: EigenTrust relevance snapshot deserialization gap        ← active
-- [ ] casehubio/ledger#247 — refactor: extract EigenTrust AttestationRelevanceContext construction
-- [ ] casehubio/ledger#248 — test: integration test for EigenTrust weighted pipeline
-
-## State
-branch: 
-issue-repo: casehubio/ledger
-status: active
-covers: casehubio/ledger#246
-project-sha: 
-date: 
-design-repo: 
-design-section-hashes: 
-flyway-next-v: 
+- [ ] casehubio/ledger#246 — fix: EigenTrust relevance snapshot deserialization gap ← done on issue-246-eigentrust-snapshot-deser
+- [ ] casehubio/ledger#247 — refactor: extract EigenTrust AttestationRelevanceContext construction ← done on issue-246-eigentrust-snapshot-deser
+- [ ] casehubio/ledger#248 — test: integration test for EigenTrust weighted pipeline ← done on issue-246-eigentrust-snapshot-deser
+- [ ] casehubio/ledger#252 — refactor shared SnapshotParser
+- [ ] casehubio/ledger#253 — test QuarkusTest EigenTrust pass
+- [ ] casehubio/ledger#254 — test malformed snapshot JSON
