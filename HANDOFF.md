@@ -1,26 +1,39 @@
 # Session Handover — casehub-ledger
 
 **Date:** 2026-11-22
-**Branch:** issue-239-independence-relevance-factor (landed on main)
+**Branch:** issue-246-eigentrust-snapshot-deser (3 issues done, landing pending)
 
 ## What was done
 
-- **#239** — Independence-aware relevance factor: integration tests + documentation.
-  - 4 integration tests in `TrustScoreCalculatorTest`: capability score shift, global score effect, equal-relevance invariant, snapshot round-trip
-  - Documentation updates: ARC42 Active Risks (prospective → shipped), ADR 0018 (assessBatch composition, consequences), contributor guide (Attestation Relevance Pipeline subsection), CLAUDE.md (RelevanceComposer description)
-  - Blog: "The Cap That Keeps the Crowd Honest" — accuracy vs independence tension, assessBatch group-level reasoning
-  - Design spec and 7 decisions validated by 3-round standard decision review
+- **#246** — fix: EigenTrust relevance snapshot deserialization gap
+  - Both EigenTrust callers (`TrustScoreJob`, `TrustScoreComputationService`) passed `Map.of()` instead of deserializing `att.relevanceSnapshot` JSON when constructing `AttestationRelevanceContext`
+  - Every snapshot-dependent relevance factor (org-distance, etc.) always returned NEUTRAL for EigenTrust, while the Beta path in `TrustScoreCalculator` worked correctly
+  - Fix: deserialize with Jackson, matching the existing Beta path pattern
+  - Code review added FINE-level logging on malformed JSON (consistency with `TrustScoreCalculator`)
 
-- **Key finding during brainstorming:** The `IndependenceAwareRelevanceFactor` implementation already existed in eidos (eidos#257), and the `RelevanceComposer` assessBatch refactor was already committed. #239's scope narrowed from M/High to S/Med — integration tests and docs only.
+- **#247** — refactor: extract EigenTrust AttestationRelevanceContext construction
+  - Moved duplicated construction from both callers into `EigenTrustEdgeWeights.buildRelevanceContexts()` — a shared static method in ledger-core
+  - Both callers reduced to single-line delegation
+  - Beta path keeps its own inline construction (passes `tenancyId` from entry — structural difference, not duplication)
 
-- **Stale .m2 gotcha:** `mvn test -pl runtime` ran against the old `RelevanceComposer` from `.m2` cache (before the assessBatch refactor). Tests showed zero effect from the factor. Fix: `mvn install -pl api,ledger-core -DskipTests` before running runtime tests.
+- **#248** — test: integration tests for EigenTrust weighted pipeline
+  - 4 tests in `EigenTrustWeightedPipelineTest` (ledger-core): basic pass, decay, confidence, relevance factor
+  - Key design insight: EigenTrust normalizes per-row, so single-attestation-per-actor tests produce identical scores regardless of weight. Tests use asymmetric multi-attestation setups where one attestor attests two actors with different weights — the ratio survives normalization
+  - Blog: "The Snapshot That Never Unpacked"
+
+## Issues filed
+
+- **#252** — refactor: extract shared `SnapshotParser` utility (XS/Low)
+- **#253** — test: Quarkus `@QuarkusTest` for TrustScoreJob EigenTrust pass (S/Med)
+- **#254** — test: malformed relevanceSnapshot JSON handling (XS/Low)
 
 ## Queue
 
-#239 done. Next: #246 (fix: EigenTrust relevance snapshot deserialization gap), #247, #248.
+#246, #247, #248 done on `issue-246-eigentrust-snapshot-deser`. #252, #253, #254 queued.
 
 ## Context for next session
 
-- Design spec at `specs/issue-239-independence-relevance-factor/2026-11-22-independence-relevance-factor-design.md` covers the full design including evolution roadmap
-- The eidos companion issue is eidos#257 — both the `IndependenceAwareRelevanceFactor` and `OrgProximityRelevanceFactor` are in eidos org-runtime
-- The `.m2` cache gotcha is documented in CLAUDE.md build guidance (upstream chain note)
+- Branch has 3 clean commits (squashed from 5), squash review recorded
+- `work end` is in progress — resume with `python3 ~/.claude/skills/project/work.py end` to land
+- The `IndependenceAwareRelevanceFactor` (eidos#257) will now fire for EigenTrust — not just Beta. This was silently broken before #246
+- `EigenTrustEdgeWeights.buildRelevanceContexts()` is a new public method on an existing utility — CLAUDE.md project structure doesn't mention it (internal utility, not an SPI)
