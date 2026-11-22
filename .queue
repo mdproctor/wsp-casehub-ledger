@@ -12,7 +12,7 @@
 - [x] casehubio/ledger#247 — refactor: extract EigenTrust AttestationRelevanceContext construction
 - [x] casehubio/ledger#248 — test: integration test for EigenTrust weighted pipeline
 - [x] casehubio/ledger#252 — refactor shared SnapshotParser
-- [ ] casehubio/ledger#253 — test QuarkusTest EigenTrust pass ← done on issue-252-refactor-shared-snapshot-parser
+- [x] casehubio/ledger#253 — test QuarkusTest EigenTrust pass
 - [ ] casehubio/ledger#254 — test malformed snapshot JSON        ← active
 
 ## State
