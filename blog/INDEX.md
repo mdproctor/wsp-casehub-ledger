@@ -2,6 +2,7 @@
 
 | File | Date | Title |
 |------|------|-------|
+| [2026-11-22-mdp01-the-cap-that-keeps-the-crowd-honest.md](2026-11-22-mdp01-the-cap-that-keeps-the-crowd-honest.md) | 2026-11-22 | Independence-aware relevance factor — why accuracy-biased weighting needs an anti-collusion cap, how assessBatch() enables group-level reasoning, and the 60% default |
 | [2026-11-20-mdp01-the-network-that-couldnt-tell-time.md](2026-11-20-mdp01-the-network-that-couldnt-tell-time.md) | 2026-11-20 | EigenTrust edge weighting — three factors not four (credibility excluded because power iteration already handles it); consumer opacity; calibration problem; TrustScoreDetail evolution path |
 | [2026-11-18-mdp02-the-interface-that-lived-next-door.md](2026-11-18-mdp02-the-interface-that-lived-next-door.md) | 2026-11-18 | LedgerEntryEnricher moved from ledger-core to api — sibling SPI revealed wrong module placement; enricher SPIs belong where consumers can see them |
 | [2026-06-18-mdp01-the-race-that-wasnt.md](2026-06-18-mdp01-the-race-that-wasnt.md) | 2026-06-18 | ON CONFLICT DO NOTHING concurrency analysis; H2 2.4.240 rejects named-target DO UPDATE; three-way dialect enum |
