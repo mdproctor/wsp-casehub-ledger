@@ -1,17 +1,3 @@
-# Work Plan —
-
-## State
-branch: 
-issue-repo: casehubio/ledger
-status: active
-project-sha: 
-date: 
-design-repo: 
-design-section-hashes: 
-flyway-next-v: 
-covers: casehubio/ledger#254
-
-## Queue
 - [x] casehubio/ledger#237 — Issue #237
 - [x] casehubio/ledger#231 — feat: org-scoped attestation weighting
 - [x] casehubio/ledger#240 — ADR for AttestationRelevanceFactor SPI
@@ -25,6 +11,17 @@ covers: casehubio/ledger#254
 - [x] casehubio/ledger#246 — fix: EigenTrust relevance snapshot deserialization gap
 - [x] casehubio/ledger#247 — refactor: extract EigenTrust AttestationRelevanceContext construction
 - [x] casehubio/ledger#248 — test: integration test for EigenTrust weighted pipeline
-- [ ] casehubio/ledger#252 — refactor shared SnapshotParser ← done on issue-252-refactor-shared-snapshot-parser
+- [x] casehubio/ledger#252 — refactor shared SnapshotParser
 - [ ] casehubio/ledger#253 — test QuarkusTest EigenTrust pass ← done on issue-252-refactor-shared-snapshot-parser
-- [ ] casehubio/ledger#254 — test malformed snapshot JSON ← active
+- [ ] casehubio/ledger#254 — test malformed snapshot JSON        ← active
+
+## State
+branch: 
+issue-repo: casehubio/ledger
+status: active
+covers: casehubio/ledger#254
+project-sha: 
+date: 
+design-repo: 
+design-section-hashes: 
+flyway-next-v: 
