@@ -10,8 +10,8 @@
 - [x] casehubio/ledger#239 — independence-aware relevance factor — anti-collusion cap
 - [x] casehubio/ledger#246 — fix: EigenTrust relevance snapshot deserialization gap
 - [x] casehubio/ledger#247 — refactor: extract EigenTrust AttestationRelevanceContext construction
-- [ ] casehubio/ledger#248 — test: integration test for EigenTrust weighted pipeline ← done on issue-246-eigentrust-snapshot-deser
-- [ ] casehubio/ledger#252 — refactor shared SnapshotParser
+- [x] casehubio/ledger#248 — test: integration test for EigenTrust weighted pipeline
+- [ ] casehubio/ledger#252 — refactor shared SnapshotParser        ← active
 - [ ] casehubio/ledger#253 — test QuarkusTest EigenTrust pass
 - [ ] casehubio/ledger#254 — test malformed snapshot JSON
 
